@@ -34,12 +34,43 @@ architecture that checkpoint was trained with, or loading will fail with
 a state_dict mismatch error.
 """
 import json
+import os
 import re
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+
+def _prefer_pyside6_dlls() -> None:
+    """
+    On Windows, PyQt6 also ships Qt6Core.dll. If that copy is found first,
+    `from PySide6.QtCore import ...` fails with:
+        ImportError: DLL load failed while importing QtCore
+    Put PySide6's own folder at the front of the DLL search path first.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import PySide6
+    except ImportError:
+        return
+    dll_dir = str(Path(PySide6.__file__).resolve().parent)
+    os.add_dll_directory(dll_dir)
+    os.environ["PATH"] = dll_dir + os.pathsep + os.environ.get("PATH", "")
+    os.environ.setdefault("QT_API", "pyside6")
+
+
+_prefer_pyside6_dlls()
+
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QFrame, QFileDialog, QSizePolicy, QSlider, QMessageBox,
+    QProgressBar, QComboBox
+)
+from PySide6.QtWebEngineWidgets import QWebEngineView
 
 import numpy as np
 import nibabel as nib
@@ -50,14 +81,6 @@ from scipy.ndimage import gaussian_filter, label as ndi_label, center_of_mass as
 from skimage.filters import threshold_otsu
 from skimage.measure import marching_cubes
 import plotly.graph_objects as go
-
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QFrame, QFileDialog, QSizePolicy, QSlider, QMessageBox,
-    QProgressBar, QComboBox
-)
-from PySide6.QtWebEngineWidgets import QWebEngineView
 
 # ---------------------------------------------------------------------------
 # Dark theme palette

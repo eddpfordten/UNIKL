@@ -12,10 +12,10 @@ Run from this folder or the project root:
     python ui_layout.py
 """
 import math
+import os
 import re
 import sys
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -25,6 +25,40 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+
+def _prefer_pyside6_dlls() -> None:
+    """
+    On Windows, PyQt6 also ships Qt6Core.dll. If that copy is found first,
+    `from PySide6.QtCore import ...` fails with:
+        ImportError: DLL load failed while importing QtCore
+    Put PySide6's own folder at the front of the DLL search path first.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import PySide6
+    except ImportError:
+        return
+    dll_dir = str(Path(PySide6.__file__).resolve().parent)
+    os.add_dll_directory(dll_dir)
+    os.environ["PATH"] = dll_dir + os.pathsep + os.environ.get("PATH", "")
+    os.environ.setdefault("QT_API", "pyside6")
+
+
+_prefer_pyside6_dlls()
+
+from PySide6.QtCore import Qt, QUrl, QTimer, QPointF, QObject, QThread, Signal, QSize
+from PySide6.QtGui import (
+    QColor, QFont, QIcon, QImage, QLinearGradient, QPainter, QPainterPath,
+    QPen, QPixmap, QPolygonF,
+)
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QFrame, QFileDialog, QSizePolicy, QSlider, QMessageBox,
+    QProgressBar, QStackedLayout, QScrollArea,
+)
+from PySide6.QtWebEngineWidgets import QWebEngineView
+
 import numpy as np
 import nibabel as nib
 import torch
@@ -32,15 +66,6 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from scipy.ndimage import zoom, label as ndi_label, center_of_mass as ndi_center_of_mass
 import plotly.graph_objects as go
-
-from PySide6.QtCore import Qt, QUrl, QTimer, QPointF
-from PySide6.QtGui import QPainter, QPen, QColor, QPixmap
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QFrame, QFileDialog, QSizePolicy, QSlider, QMessageBox,
-    QProgressBar, QComboBox, QStackedLayout,
-)
-from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from brain_tumor_seg.config import CHECKPOINT_DIR, MODALITIES, TARGET_SHAPE
 from brain_tumor_seg.data.dataset import _normalize
@@ -52,21 +77,31 @@ from brain_tumor_seg.visualization.survival import format_survival
 from brain_tumor_seg.visualization.viewer3d import INTERACTION_CONFIG, show_volume_3d, brain_surface_level
 
 # ---------------------------------------------------------------------------
-# Dark theme palette
+# Dark theme palette — charcoal base with yellowish-orange as the
+# high-tech accent (UniKL KL orange, tumor highlight, survival neon).
+# Teal stays only on the 2D scan overlays so the amber chrome can read.
 # ---------------------------------------------------------------------------
-# Apple-style palette (macOS/iOS dark mode system colors) — flat, no glow.
-# Named after Apple's own system color roles so the mapping is obvious:
-# https://developer.apple.com/design/human-interface-guidelines/color
-# ---------------------------------------------------------------------------
-BG_PAGE = "#1c1c1e"          # systemGray6 — page background
-BG_PANEL = "#2c2c2e"         # systemGray5 — card/panel background
-BORDER_DIM = "#3a3a3c"       # systemGray4 — subtle dividers only, not card borders
-ACCENT_TEAL = "#0a84ff"      # systemBlue — primary accent (2D views, brain, primary button)
+BG_PAGE = "#121214"
+BG_PANEL = "#1c1c20"
+BORDER_DIM = "#2e2a24"
+ACCENT_AMBER = "#ff9f1c"
+ACCENT_AMBER_SOFT = "#ffc14d"
+ACCENT_AMBER_DEEP = "#e67a00"
+ACCENT_TEAL = "#0a84ff"
 ACCENT_TEAL_SOFT = "#409cff"
-ACCENT_CORAL = "#ff9f0a"     # systemOrange — tumor-related accent (3D tumor panel)
-ACCENT_CORAL_SOFT = "#ffb340"
-TEXT_LIGHT = "#f2f2f7"       # label — primary text
-TEXT_MUTED = "#8e8e93"       # systemGray — secondary/muted text
+ACCENT_CORAL = ACCENT_AMBER
+ACCENT_CORAL_SOFT = ACCENT_AMBER_SOFT
+TEXT_LIGHT = "#f4f1ea"
+TEXT_MUTED = "#9a9388"
+_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+_HEADER_BRAIN_PATH = _ASSETS_DIR / "header_brain.png"
+_UNIKL_LOGO_PATH = _ASSETS_DIR / "unikl_logo.png"
+_APP_ICON_PATH = _ASSETS_DIR / "app_icon.png"
+_APP_ICO_PATH = _ASSETS_DIR / "app_icon.ico"
+_RUN_ICON_PATH = _ASSETS_DIR / "icon_run.png"
+SURVIVAL_EDGE_GAP = 12
+_ICON_CACHE: dict = {}
+_HIVE_RGB_CACHE: dict = {}
 
 # Distinct colors assigned to separate tumor components (a brain can have
 # more than one lesion) — largest lesion gets the first color, and the
@@ -97,7 +132,7 @@ def _hex_to_rgb01(hex_color: str) -> tuple:
 SPACING = 16
 
 APP_STYLESHEET = f"""
-QMainWindow, QWidget {{
+QMainWindow, QWidget#rootShell {{
     background-color: {BG_PAGE};
 }}
 QLabel {{
@@ -111,18 +146,23 @@ QMessageBox QLabel {{
 }}
 QSlider {{
     background: transparent;
+    min-height: 18px;
+    max-height: 18px;
 }}
 QSlider::groove:horizontal {{
-    height: 4px;
-    background: #000000;
+    height: 3px;
+    background: {BORDER_DIM};
     border-radius: 2px;
 }}
 QSlider::handle:horizontal {{
-    background: {ACCENT_TEAL};
-    width: 14px;
-    height: 14px;
-    margin: -6px 0;
-    border-radius: 7px;
+    background: {ACCENT_AMBER};
+    width: 12px;
+    height: 12px;
+    margin: -5px 0;
+    border-radius: 6px;
+}}
+QSlider::handle:horizontal:disabled {{
+    background: #48484a;
 }}
 QProgressBar {{
     border: none;
@@ -131,8 +171,25 @@ QProgressBar {{
     height: 10px;
 }}
 QProgressBar::chunk {{
-    background-color: {ACCENT_TEAL};
+    background-color: {ACCENT_AMBER};
     border-radius: 5px;
+}}
+QScrollBar:vertical {{
+    background: #16161a;
+    width: 8px;
+    margin: 2px;
+    border: none;
+}}
+QScrollBar::handle:vertical {{
+    background: {ACCENT_AMBER};
+    border-radius: 4px;
+    min-height: 22px;
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0px;
+}}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: transparent;
 }}
 """
 
@@ -153,35 +210,37 @@ QPushButton {{
     border: none;
     border-radius: 6px;
     background-color: transparent;
-    color: {TEXT_MUTED};
-    font-size: 11px;
+    color: {ACCENT_AMBER};
+    font-size: 13px;
     padding: 1px 5px;
 }}
 QPushButton:hover {{
-    color: {ACCENT_TEAL_SOFT};
-    background-color: #3a3a3c;
+    color: {ACCENT_AMBER_SOFT};
+    background-color: #3a3224;
 }}
 """
 
-FILE_SELECTOR_STYLE = f"""
-QComboBox {{
-    border: none;
-    border-radius: 14px;
-    padding: 8px {SPACING}px;
+DROP_ZONE_STYLE = f"""
+QFrame {{
+    border: 1.5px dashed {BORDER_DIM};
+    border-radius: 16px;
     background-color: {BG_PANEL};
-    color: {TEXT_LIGHT};
 }}
-QComboBox::drop-down {{
-    border: none;
-    width: 24px;
+"""
+
+DROP_ZONE_HOVER_STYLE = f"""
+QFrame {{
+    border: 1.5px dashed {ACCENT_AMBER};
+    border-radius: 16px;
+    background-color: #2a2114;
 }}
-QComboBox QAbstractItemView {{
+"""
+
+DROP_ZONE_LOADED_STYLE = f"""
+QFrame {{
+    border: 1.5px solid {ACCENT_AMBER};
+    border-radius: 16px;
     background-color: {BG_PANEL};
-    color: {TEXT_LIGHT};
-    selection-background-color: {ACCENT_TEAL};
-    border: none;
-    outline: none;
-    padding: 4px;
 }}
 """
 
@@ -205,36 +264,72 @@ MODEL_PATH = _resolve_checkpoint()
 INFERENCE_SIZE = TARGET_SHAPE
 # 3D marching cubes on a native 240^3 volume stalls the UI; downsample first.
 RENDER_MAX_DIM = 96
-# Every loaded scan gets resampled to this shape before display, regardless
-# of its native resolution — different patients/scanners can have different
-# native voxel grids, and without this the 2D panels would show
-# inconsistent proportions from one case to the next.
+# Square display grid. Native BraTS volumes are often 240x240x155 — stretching
+# that directly to a cube distorts sagittal/coronal views. Pad to a cube first,
+# then resize with one scale so slices stay square and the tumor mask maps back
+# onto the same grid the 2D views show.
 STANDARD_DISPLAY_SHAPE = (128, 128, 128)
+
+# Embedded default for the folder picker (BraTS-PEDs training cases).
+EMBEDDED_TRAINING_DIR = Path(
+    r"C:\Users\Haqkiem\OneDrive\UNIKL\July-2026\Competition"
+    r"\PKG - BraTS-PEDs-v1\BraTS-PEDs-v1\Training"
+)
+
+_MODEL_CACHE = {"model": None, "device": None}
+
+
+def _default_browse_dir() -> str:
+    if EMBEDDED_TRAINING_DIR.is_dir():
+        return str(EMBEDDED_TRAINING_DIR)
+    for directory in [_PROJECT_ROOT, *_PROJECT_ROOT.parents]:
+        candidate = directory / "PKG - BraTS-PEDs-v1" / "BraTS-PEDs-v1" / "Training"
+        if candidate.is_dir():
+            return str(candidate)
+    return str(Path.home())
+
+
+def _cube_pads(shape) -> list:
+    size = max(int(s) for s in shape)
+    pads = []
+    for s in shape:
+        extra = size - int(s)
+        before = extra // 2
+        pads.append((before, extra - before))
+    return pads
+
+
+def _apply_pads(volume: np.ndarray, pads) -> np.ndarray:
+    if all(before == 0 and after == 0 for before, after in pads):
+        return volume
+    return np.pad(volume, pads, mode="constant")
+
+
+def _resize_exact(volume: np.ndarray, target_shape: tuple, order: int = 1) -> np.ndarray:
+    target = tuple(int(s) for s in target_shape)
+    if volume.shape == target:
+        return volume
+    zoom_factors = [t / s for t, s in zip(target, volume.shape)]
+    resampled = zoom(volume, zoom_factors, order=order)
+    if resampled.shape != target:
+        slices = tuple(slice(0, min(s, t)) for s, t in zip(resampled.shape, target))
+        cropped = resampled[slices]
+        pad_widths = [(0, t - c) for c, t in zip(cropped.shape, target)]
+        resampled = np.pad(cropped, pad_widths, mode="constant")
+    return resampled
 
 
 def _standardize_volume(volume: np.ndarray, affine: np.ndarray, order: int = 1):
     """
-    Resamples `volume` to STANDARD_DISPLAY_SHAPE and returns a matching
-    diagonal affine reflecting the new (larger or smaller) voxel spacing,
-    so downstream physical measurements — report volumes, voxel-cm3 math,
-    3D mesh spacing — stay accurate after the resize rather than silently
-    assuming 1mm voxels.
+    Pad to a cube (no stretch), then resize to STANDARD_DISPLAY_SHAPE.
+    Masks predicted at INFERENCE_SIZE are mapped back to this same grid.
     """
     native_spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0))
-    old_shape = np.array(volume.shape, dtype=np.float64)
-    new_shape = np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64)
-    zoom_factors = new_shape / old_shape
-
-    resampled = zoom(volume, zoom_factors, order=order)
-    # zoom()'s output can be off by a voxel from rounding; crop/pad to the
-    # exact target shape so every panel gets a truly identical array size.
-    if resampled.shape != STANDARD_DISPLAY_SHAPE:
-        slices = tuple(slice(0, min(s, t)) for s, t in zip(resampled.shape, STANDARD_DISPLAY_SHAPE))
-        cropped = resampled[slices]
-        pad_widths = [(0, t - c) for c, t in zip(cropped.shape, STANDARD_DISPLAY_SHAPE)]
-        resampled = np.pad(cropped, pad_widths, mode="constant")
-
-    new_spacing = native_spacing * (old_shape / new_shape)
+    pads = _cube_pads(volume.shape)
+    padded = _apply_pads(volume, pads)
+    padded_shape = np.array(padded.shape, dtype=np.float64)
+    resampled = _resize_exact(padded, STANDARD_DISPLAY_SHAPE, order=order)
+    new_spacing = native_spacing * (padded_shape / np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64))
     new_affine = np.eye(4)
     new_affine[0, 0] = new_spacing[0]
     new_affine[1, 1] = new_spacing[1]
@@ -242,84 +337,837 @@ def _standardize_volume(volume: np.ndarray, affine: np.ndarray, order: int = 1):
     return resampled, new_affine
 
 
-def _muted_label(text: str) -> QLabel:
-    label = QLabel(text)
-    label.setStyleSheet(
-        f"border: none; color: {TEXT_MUTED}; font-size: 11px; font-weight: 500;"
-    )
-    return label
+def _content_bbox(volume: np.ndarray, thresh: float = 0.04, margin: float = 0.05):
+    """Inclusive (lo, hi) of tissue voxels, with a small margin. None if empty."""
+    hits = np.argwhere(volume > thresh)
+    if hits.size == 0:
+        return None
+    lo = hits.min(axis=0)
+    hi = hits.max(axis=0)
+    pad = np.maximum(2, ((hi - lo + 1) * margin).astype(int))
+    lo = np.maximum(0, lo - pad)
+    hi = np.minimum(np.array(volume.shape) - 1, hi + pad)
+    return lo, hi
 
 
-def _value_label(placeholder: str = "—") -> QLabel:
-    label = QLabel(placeholder)
-    label.setWordWrap(True)
-    label.setStyleSheet(
-        f"border: none; color: {TEXT_LIGHT}; font-size: 13px; font-weight: 500;"
-    )
-    return label
+class _BackgroundJob(QObject):
+    """Runs a callable off the GUI thread so loading overlays can keep painting."""
 
+    ok = Signal(object)
+    err = Signal(str)
 
-class PatientRecordPanel(QFrame):
-    """Case ID, metadata survival, and (after a run) predicted survival."""
-
-    def __init__(self, min_height: int = 150):
+    def __init__(self, fn):
         super().__init__()
-        self.setFrameShape(QFrame.Box)
-        self.setStyleSheet(_panel_style())
-        self.setMinimumHeight(min_height)
+        self._fn = fn
+
+    def run(self):
+        try:
+            self.ok.emit(self._fn())
+        except Exception as exc:
+            self.err.emit(str(exc))
+
+
+def _ensure_model():
+    cached = _MODEL_CACHE["model"]
+    if cached is not None:
+        return cached, _MODEL_CACHE["device"]
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {MODEL_PATH}")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    state_dict = torch.load(MODEL_PATH, map_location=device)
+    model = MultiTaskUNet3D(in_channels=4, out_channels=1)
+    try:
+        model.load_state_dict(state_dict)
+    except RuntimeError:
+        model.load_segmentation_weights(state_dict)
+    model.to(device)
+    model.eval()
+    _MODEL_CACHE["model"] = model
+    _MODEL_CACHE["device"] = device
+    return model, device
+
+
+def _column_separator() -> QFrame:
+    line = QFrame()
+    line.setFixedWidth(1)
+    line.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+    line.setStyleSheet("QFrame { background-color: #4a3a22; border: none; }")
+    return line
+
+
+def _hex_points(cx: float, cy: float, radius: float) -> QPolygonF:
+    pts = QPolygonF()
+    for i in range(6):
+        angle = math.radians(60 * i - 30)
+        pts.append(QPointF(cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
+    return pts
+
+
+def _paint_hive_chrome(painter: QPainter, rect, color: QColor) -> None:
+    """Amber honeycomb corners + edge ticks around a card."""
+    painter.setRenderHint(QPainter.Antialiasing)
+    inset = 9
+    radius = 6.5
+    corners = (
+        (rect.left() + inset, rect.top() + inset),
+        (rect.right() - inset, rect.top() + inset),
+        (rect.left() + inset, rect.bottom() - inset),
+        (rect.right() - inset, rect.bottom() - inset),
+    )
+    glow = QColor(color)
+    glow.setAlpha(28)
+    edge = QColor(color)
+    edge.setAlpha(72)
+    painter.setBrush(Qt.NoBrush)
+    for cx, cy in corners:
+        painter.setPen(QPen(glow, 2.4))
+        painter.drawPolygon(_hex_points(cx, cy, radius + 1.5))
+        painter.setPen(QPen(edge, 1.15))
+        painter.drawPolygon(_hex_points(cx, cy, radius))
+    painter.setPen(QPen(edge, 1.0))
+    left, top, right, bottom = rect.left() + 6, rect.top() + 6, rect.right() - 6, rect.bottom() - 6
+    painter.drawLine(left + 14, top, left + 30, top)
+    painter.drawLine(right - 30, top, right - 14, top)
+    painter.drawLine(left + 14, bottom, left + 30, bottom)
+    painter.drawLine(right - 30, bottom, right - 14, bottom)
+    painter.drawLine(left, top + 14, left, top + 28)
+    painter.drawLine(right, top + 14, right, top + 28)
+    painter.drawLine(left, bottom - 28, left, bottom - 14)
+    painter.drawLine(right, bottom - 28, right, bottom - 14)
+
+
+def _paint_sparse_hives(painter: QPainter, rect, seeds) -> None:
+    """A few irregular hex marks — not a filled honeycomb grid."""
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setBrush(Qt.NoBrush)
+    for cx, cy, radius, alpha, sides in seeds:
+        x = rect.left() + cx * rect.width()
+        y = rect.top() + cy * rect.height()
+        color = QColor(ACCENT_AMBER)
+        color.setAlpha(alpha)
+        painter.setPen(QPen(color, 1.15))
+        pts = _hex_points(x, y, radius)
+        if sides >= 6:
+            painter.drawPolygon(pts)
+            continue
+        for i in range(min(sides, 6)):
+            painter.drawLine(pts[i], pts[(i + 1) % 6])
+
+
+def _tight_pixmap(path: Path, pad: int = 8) -> QPixmap:
+    pix = QPixmap(str(path))
+    if pix.isNull():
+        return pix
+    image = pix.toImage()
+    width, height = image.width(), image.height()
+    min_x, min_y, max_x, max_y = width, height, -1, -1
+    step = max(1, min(width, height) // 240)
+    for y in range(0, height, step):
+        for x in range(0, width, step):
+            if image.pixelColor(x, y).lightness() > 14:
+                if x < min_x:
+                    min_x = x
+                if y < min_y:
+                    min_y = y
+                if x > max_x:
+                    max_x = x
+                if y > max_y:
+                    max_y = y
+    if max_x < 0:
+        return pix
+    return QPixmap.fromImage(image.copy(
+        max(0, min_x - pad),
+        max(0, min_y - pad),
+        min(width - max(0, min_x - pad), max_x - min_x + 2 * pad),
+        min(height - max(0, min_y - pad), max_y - min_y + 2 * pad),
+    ))
+
+
+def _asset_icon(path: Path) -> QIcon:
+    key = str(path)
+    icon = _ICON_CACHE.get(key)
+    if icon is None:
+        icon = QIcon(key)
+        _ICON_CACHE[key] = icon
+    return icon
+
+
+def _paint_hive_field(painter: QPainter, rect, alpha: float = 0.20, radius: float = 13.0) -> None:
+    """Even honeycomb HUD — same opacity across the whole rectangle."""
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setBrush(Qt.NoBrush)
+    color = QColor(ACCENT_AMBER)
+    color.setAlphaF(alpha)
+    painter.setPen(QPen(color, 1.05))
+    dx = radius * 1.75
+    dy = radius * 1.52
+    row = 0
+    y = rect.top() + radius * 0.35
+    while y < rect.bottom() + radius:
+        x = rect.left() + radius * (0.85 if row % 2 else 0.1)
+        while x < rect.right() + radius:
+            painter.drawPolygon(_hex_points(x, y, radius))
+            x += dx
+        y += dy
+        row += 1
+
+
+def _hive_backdrop_rgb(height: int, width: int) -> np.ndarray:
+    """Soft amber honeycomb field used behind 2D slices."""
+    key = (height, width)
+    cached = _HIVE_RGB_CACHE.get(key)
+    if cached is not None:
+        return cached
+    image = QImage(max(1, width), max(1, height), QImage.Format_RGBA8888)
+    image.fill(QColor("#08080c"))
+    painter = QPainter(image)
+    _paint_hive_field(painter, image.rect(), alpha=0.20, radius=max(9.0, min(height, width) / 12.0))
+    painter.end()
+    buf = bytes(image.constBits())
+    rgba = np.frombuffer(buf, dtype=np.uint8).reshape(image.height(), image.bytesPerLine())
+    rgba = rgba[:, : width * 4].reshape(height, width, 4)
+    rgb = rgba[:, :, :3].astype(np.float32) / 255.0
+    _HIVE_RGB_CACHE[key] = rgb
+    return rgb
+
+
+def _fullscreen_button(tooltip: str = "Maximize") -> QPushButton:
+    button = QPushButton("⛶")
+    button.setFixedSize(22, 20)
+    button.setStyleSheet(MAXIMIZE_BTN_STYLE)
+    button.setToolTip(tooltip)
+    button.setCursor(Qt.PointingHandCursor)
+    button.setFocusPolicy(Qt.NoFocus)
+    return button
+
+
+class HiveField(QWidget):
+    """Full-rectangle honeycomb behind a 2D viewer."""
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#08080c"))
+        _paint_hive_field(painter, self.rect(), alpha=0.20, radius=13.0)
+        painter.end()
+
+
+class HiveOverlay(QWidget):
+    """Corner hive drawn above child viewers so hexes are not clipped."""
+
+    def __init__(self, host):
+        super().__init__(host)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setStyleSheet("background: transparent; border: none;")
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        _paint_hive_chrome(painter, self.rect().adjusted(1, 1, -1, -1), QColor(ACCENT_AMBER))
+        painter.end()
+
+
+class HivePanel(QFrame):
+    """Card with amber honeycomb corners layered above inner content."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._hive_color = QColor(ACCENT_AMBER)
+        self._hive_overlay = HiveOverlay(self)
+        self._hive_overlay.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_hive_overlay()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._sync_hive_overlay()
+
+    def _sync_hive_overlay(self):
+        self._hive_overlay.setGeometry(self.rect())
+        self._hive_overlay.raise_()
+        self._hive_overlay.show()
+
+
+class RootShell(QWidget):
+    """Dark page shell. Object name keeps the global stylesheet off child widgets."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("rootShell")
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(BG_PAGE))
+        painter.end()
+
+
+class AppHeader(QWidget):
+    """Circuit / hive header with generated cancer-detection brain art."""
+
+    def __init__(self):
+        super().__init__()
+        self.setFixedHeight(86)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._brain = QPixmap(str(_HEADER_BRAIN_PATH))
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.TextAntialiasing)
+        rect = self.rect()
+
+        wash = QLinearGradient(0, 0, rect.width(), 0)
+        wash.setColorAt(0.0, QColor("#0c0a08"))
+        wash.setColorAt(0.55, QColor("#16120e"))
+        wash.setColorAt(1.0, QColor("#0a0a0c"))
+        painter.fillRect(rect, wash)
+
+        dim = QColor(ACCENT_AMBER)
+        dim.setAlpha(55)
+        lit = QColor(ACCENT_AMBER)
+        lit.setAlpha(130)
+        painter.setPen(QPen(dim, 1))
+        painter.drawLine(18, 16, int(rect.width() * 0.48), 16)
+        painter.drawLine(18, rect.height() - 14, int(rect.width() * 0.40), rect.height() - 14)
+        painter.setPen(QPen(lit, 1.1))
+        painter.drawLine(28, 16, 28, rect.height() - 14)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(lit, 1))
+        painter.drawPolygon(_hex_points(28, 16, 4.5))
+        painter.drawPolygon(_hex_points(28, rect.height() - 14, 4.5))
+
+        brain_w = 0
+        bx = rect.right()
+        if not self._brain.isNull():
+            brain = self._brain.scaled(
+                min(280, int(rect.width() * 0.30)),
+                rect.height() - 4,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+            bx = rect.width() - brain.width() - 4
+            by = (rect.height() - brain.height()) // 2
+            painter.drawPixmap(bx, by, brain)
+            brain_w = brain.width()
+
+        _paint_sparse_hives(
+            painter,
+            rect,
+            (
+                (0.58, 0.28, 9, 70, 6),
+                (0.64, 0.62, 7, 46, 4),
+                (0.70, 0.22, 11, 38, 3),
+                (0.74, 0.70, 8, 58, 5),
+                (0.52, 0.72, 6, 40, 6),
+                (0.80, 0.40, 5, 52, 4),
+            ),
+        )
+        painter.setPen(QPen(QColor(255, 159, 28, 70), 1))
+        painter.drawLine(int(rect.width() * 0.58), int(rect.height() * 0.28), bx + 10, rect.height() // 2)
+
+        title_end = self._draw_tech_title(painter, rect.adjusted(44, 0, -brain_w - 16, 0))
+        painter.setPen(QPen(QColor(255, 159, 28, 160), 1.3))
+        painter.drawLine(48, rect.height() - 18, max(title_end + 8, 220), rect.height() - 18)
+
+        painter.setPen(QPen(QColor(ACCENT_AMBER), 1.4))
+        painter.drawLine(0, rect.height() - 1, rect.width(), rect.height() - 1)
+        painter.end()
+
+    def _draw_tech_title(self, painter: QPainter, rect) -> int:
+        parts = (
+            ("A.I. ", True),
+            ("COPILOT FOR ", False),
+            ("CANCER DETECTION", True),
+            (" AND ", False),
+            ("PATIENT SURVIVAL PREDICTION", True),
+        )
+        hot = QColor(ACCENT_AMBER)
+        glow = QColor(255, 176, 50, 110)
+        cream = QColor("#ffd27a")
+        size = 13
+        text_width = rect.width()
+        while size >= 9:
+            font = QFont("Segoe UI", size, QFont.DemiBold)
+            font.setLetterSpacing(QFont.AbsoluteSpacing, 1.1)
+            painter.setFont(font)
+            metrics = painter.fontMetrics()
+            full = "".join(text for text, _ in parts)
+            if metrics.horizontalAdvance(full) + 22 <= text_width:
+                break
+            size -= 1
+        metrics = painter.fontMetrics()
+        y = rect.center().y() + metrics.ascent() / 2 - 2
+        x = rect.left()
+        painter.setPen(QPen(QColor(ACCENT_AMBER), 1.2))
+        painter.setBrush(QColor(255, 159, 28, 40))
+        painter.drawPolygon(_hex_points(x + 6, y - metrics.ascent() * 0.35, 6))
+        x += 18
+        for text, accent in parts:
+            color = hot if accent else cream
+            painter.setPen(QColor(255, 159, 28, 70))
+            painter.drawText(int(x + 1), int(y + 1), text)
+            painter.setPen(color)
+            painter.drawText(int(x), int(y), text)
+            x += metrics.horizontalAdvance(text)
+        return int(x)
+
+
+class TechRule(QWidget):
+    """Horizontal circuit separator used above the UniKL credit."""
+
+    def __init__(self):
+        super().__init__()
+        self.setFixedHeight(14)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        y = self.height() / 2
+        w = self.width()
+        amber = QColor(ACCENT_AMBER)
+        amber.setAlpha(160)
+        dim = QColor(ACCENT_AMBER)
+        dim.setAlpha(60)
+        painter.setPen(QPen(dim, 1))
+        painter.drawLine(8, y, w - 8, y)
+        painter.setPen(QPen(amber, 1.2))
+        painter.drawLine(28, y, w - 28, y)
+        painter.setBrush(QColor(ACCENT_AMBER))
+        for x in (10, w / 2, w - 10):
+            painter.setPen(QPen(amber, 1))
+            painter.drawPolygon(_hex_points(x, y, 4.2))
+        painter.end()
+
+
+class SquadCredit(QWidget):
+    """Developed-by strip: circuit rule, UniKL logo, A.I. Squad remark."""
+
+    def __init__(self):
+        super().__init__()
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(2, 18, 2, 4)
+        layout.setSpacing(8)
+        layout.addWidget(TechRule())
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+
+        logo = QLabel()
+        logo.setStyleSheet("background: transparent; border: none;")
+        pix = _tight_pixmap(_UNIKL_LOGO_PATH)
+        if not pix.isNull():
+            logo.setPixmap(pix.scaled(108, 44, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        row.addWidget(logo, 0, Qt.AlignVCenter)
+
+        copy = QLabel("Developed by\nUniKL MIIT A.I. Squad")
+        copy.setWordWrap(True)
+        copy.setStyleSheet(
+            f"border: none; background: transparent; color: {ACCENT_AMBER_SOFT}; "
+            f"font-size: 9px; font-weight: 600; letter-spacing: 0.4px;"
+        )
+        row.addWidget(copy, 1)
+        layout.addLayout(row)
+
+
+class TechLabel(QLabel):
+    """Yellowish-orange HUD label for the 3D panels."""
+
+    def __init__(self, text: str):
+        super().__init__(f"⬡  {text.upper()}")
+        self.setAlignment(Qt.AlignCenter)
+        self.setStyleSheet(
+            f"border: none; color: {ACCENT_AMBER}; font-size: 11px; "
+            f"font-weight: 700; letter-spacing: 1.5px; background: transparent;"
+        )
+
+
+class _RecordRow(QWidget):
+    """Bullet row: small muted label, larger value underneath."""
+
+    def __init__(self, caption: str):
+        super().__init__()
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(8)
+
+        bullet = QLabel("•")
+        bullet.setFixedWidth(12)
+        bullet.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        bullet.setStyleSheet(
+            f"border: none; color: {ACCENT_AMBER}; font-size: 16px; "
+            f"font-weight: 700; background: transparent; padding-top: 1px;"
+        )
+        outer.addWidget(bullet)
+
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(2)
+
+        cap = QLabel(caption)
+        cap.setStyleSheet(
+            f"border: none; color: {TEXT_MUTED}; font-size: 10px; "
+            f"font-weight: 500; letter-spacing: 0.3px; background: transparent;"
+        )
+        text_col.addWidget(cap)
+
+        self.value = QLabel("—")
+        self.value.setWordWrap(True)
+        self.value.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._apply_value_style(filled=False)
+        text_col.addWidget(self.value)
+        outer.addLayout(text_col, stretch=1)
+
+    def _apply_value_style(self, filled: bool) -> None:
+        color = TEXT_LIGHT if filled else "#636366"
+        self.value.setStyleSheet(
+            f"border: none; color: {color}; font-size: 13px; font-weight: 600; "
+            f"background: transparent; padding: 0;"
+        )
+
+    def set_value(self, text: str, filled: bool) -> None:
+        self.value.setText(text)
+        self.value.setToolTip(text if filled else "")
+        self._apply_value_style(filled)
+
+
+class PatientRecordPanel(HivePanel):
+    """Compact card: distinct header bar + bulleted facts."""
+
+    def __init__(self):
+        super().__init__()
+        self.setFrameShape(QFrame.NoFrame)
+        self.setStyleSheet(
+            f"QFrame {{ border: none; border-radius: 14px; background-color: {BG_PANEL}; }}"
+        )
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumHeight(132)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QFrame()
+        header.setStyleSheet(
+            f"QFrame {{ background-color: #3a3a3c; border: none; "
+            f"border-top-left-radius: 14px; border-top-right-radius: 14px; "
+            f"border-bottom: 2px solid {ACCENT_AMBER}; }}"
+        )
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(14, 9, 14, 8)
+        title = QLabel("PATIENT RECORD")
+        title.setStyleSheet(
+            f"border: none; color: {ACCENT_AMBER_SOFT}; font-size: 11px; "
+            f"font-weight: 700; letter-spacing: 1.4px; background: transparent;"
+        )
+        header_layout.addWidget(title)
+        layout.addWidget(header)
+
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(14, 10, 10, 12)
+        body_layout.setSpacing(8)
+
+        self.case_field = _RecordRow("Patient ID")
+        self.survival_field = _RecordRow("Overall survival")
+        self.volume_field = _RecordRow("Tumor volume")
+        body_layout.addWidget(self.case_field)
+        body_layout.addWidget(self.survival_field)
+        body_layout.addWidget(self.volume_field)
+        body.setMinimumHeight(210)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        scroll.setWidget(body)
+        scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        )
+        scroll.viewport().setStyleSheet("background: transparent;")
+        layout.addWidget(scroll, 1)
+        self._record_scroll = scroll
+
+    def set_case(self, case_id: str, survival_days: Optional[float]) -> None:
+        self.case_field.set_value(case_id, True)
+        if survival_days is None:
+            self.survival_field.set_value("No metadata label", False)
+        else:
+            self.survival_field.set_value(format_survival(survival_days), True)
+        self.volume_field.set_value("—", False)
+
+    def set_volume(self, tumor_cm3: Optional[float]) -> None:
+        if tumor_cm3 is None:
+            self.volume_field.set_value("—", False)
+        else:
+            self.volume_field.set_value(f"{tumor_cm3:.2f} cm\u00b3", True)
+
+
+class DropVolumeZone(HivePanel):
+    """Click or drag-and-drop a patient folder (or a NIfTI file inside one)."""
+
+    folder_chosen = Signal(object)
+
+    def __init__(self):
+        super().__init__()
+        self.setAcceptDrops(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumHeight(96)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._loaded = False
+        self._set_style(hover=False)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 14, 12, 14)
         layout.setSpacing(6)
 
-        title = QLabel("Patients record")
+        self._title = QLabel("Drop volume")
+        self._title.setAlignment(Qt.AlignCenter)
+        self._title.setWordWrap(True)
+        self._title.setStyleSheet(
+            f"border: none; color: {TEXT_LIGHT}; font-size: 13px; font-weight: 600;"
+        )
+        layout.addWidget(self._title)
+
+        self._hint = QLabel("Drop a patient folder here\nor click to browse")
+        self._hint.setAlignment(Qt.AlignCenter)
+        self._hint.setWordWrap(True)
+        self._hint.setStyleSheet(
+            f"border: none; color: {TEXT_MUTED}; font-size: 11px;"
+        )
+        layout.addWidget(self._hint)
+
+    def _set_style(self, hover: bool) -> None:
+        if hover:
+            self.setStyleSheet(DROP_ZONE_HOVER_STYLE)
+        elif self._loaded:
+            self.setStyleSheet(DROP_ZONE_LOADED_STYLE)
+        else:
+            self.setStyleSheet(DROP_ZONE_STYLE)
+
+    def set_case(self, case_id: str) -> None:
+        self._loaded = True
+        self._title.setText(case_id)
+        self._hint.setText("Drop or click to replace")
+        self._set_style(hover=False)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            folder = QFileDialog.getExistingDirectory(
+                self.window(), "Select patient folder", _default_browse_dir()
+            )
+            if folder:
+                self.folder_chosen.emit(Path(folder))
+        super().mouseReleaseEvent(event)
+
+    def enterEvent(self, event):
+        self._set_style(hover=True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._set_style(hover=False)
+        super().leaveEvent(event)
+
+    @staticmethod
+    def _path_from_mime(event) -> Optional[Path]:
+        urls = event.mimeData().urls() if event.mimeData() else []
+        if not urls:
+            return None
+        path = Path(urls[0].toLocalFile())
+        if path.is_file() and re.search(r"\.nii(\.gz)?$", path.name, re.IGNORECASE):
+            return path.parent
+        if path.is_dir():
+            return path
+        return None
+
+    def dragEnterEvent(self, event):
+        if self._path_from_mime(event) is not None:
+            event.acceptProposedAction()
+            self._set_style(hover=True)
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        self._set_style(hover=False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event):
+        folder = self._path_from_mime(event)
+        self._set_style(hover=False)
+        if folder is None:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self.folder_chosen.emit(folder)
+
+
+_NEON_SEGMENTS = {
+    "0": "abcdef",
+    "1": "bc",
+    "2": "abged",
+    "3": "abcdg",
+    "4": "fgbc",
+    "5": "afgcd",
+    "6": "afgcde",
+    "7": "abc",
+    "8": "abcdefg",
+    "9": "abcdfg",
+}
+
+_NEON_OFF = QColor(52, 28, 4, 80)
+_NEON_SEG_SHADES = {
+    "a": (QColor(180, 80, 0, 50), QColor(255, 140, 20, 90), QColor("#d97800"), QColor("#ffb020"), QColor("#ffe7b0")),
+    "b": (QColor(160, 70, 0, 45), QColor(240, 130, 10, 85), QColor("#c86800"), QColor("#ff9f1c"), QColor("#ffd88a")),
+    "c": (QColor(140, 60, 0, 40), QColor(220, 120, 8, 80), QColor("#b85c00"), QColor("#f59212"), QColor("#ffd070")),
+    "d": (QColor(190, 90, 0, 50), QColor(255, 160, 30, 95), QColor("#e88800"), QColor("#ffc14d"), QColor("#fff4d2")),
+    "e": (QColor(120, 50, 0, 40), QColor(200, 110, 0, 75), QColor("#a85000"), QColor("#e67a00"), QColor("#ffc868")),
+    "f": (QColor(150, 65, 0, 45), QColor(230, 125, 10, 80), QColor("#c06000"), QColor("#ffaa28"), QColor("#ffe0a0")),
+    "g": (QColor(200, 100, 0, 55), QColor(255, 180, 40, 100), QColor("#ff9f1c"), QColor("#ffd060"), QColor("#ffffff")),
+}
+
+
+class NeonDigits(QWidget):
+    """Seven-segment readout with layered yellowish-orange neon glow."""
+
+    def __init__(self, digits: str = "000"):
+        super().__init__()
+        self._digits = digits
+        self.setFixedHeight(102)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_NoSystemBackground, True)
+        self.setAutoFillBackground(False)
+        self.setStyleSheet("background: transparent; border: none;")
+
+    def set_value(self, days: Optional[int]) -> None:
+        if days is None:
+            self._digits = "000"
+        else:
+            n = max(0, int(days))
+            self._digits = f"{n:03d}" if n < 1000 else str(n)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        count = max(3, len(self._digits))
+        text = self._digits.rjust(count, "0")
+        pad = 8
+        gap = 8
+        available = max(1, self.width() - pad * 2 - gap * (count - 1))
+        digit_w = available / count
+        digit_h = self.height() - 12
+        y = 6
+
+        for i, ch in enumerate(text):
+            x = pad + i * (digit_w + gap)
+            self._draw_digit(painter, x, y, digit_w, digit_h, ch)
+        painter.end()
+
+    def _draw_digit(self, painter: QPainter, x: float, y: float, w: float, h: float, ch: str):
+        thickness = max(6.0, min(w, h) * 0.20)
+        inset = 2.0
+        active = set(_NEON_SEGMENTS.get(ch, ""))
+
+        def horiz(px, py, length):
+            path = QPainterPath()
+            t = thickness / 2
+            path.moveTo(px + t, py)
+            path.lineTo(px + length - t, py)
+            path.lineTo(px + length, py + t)
+            path.lineTo(px + length - t, py + thickness)
+            path.lineTo(px + t, py + thickness)
+            path.lineTo(px, py + t)
+            path.closeSubpath()
+            return path
+
+        def vert(px, py, length):
+            path = QPainterPath()
+            t = thickness / 2
+            path.moveTo(px + t, py)
+            path.lineTo(px + thickness, py + t)
+            path.lineTo(px + thickness, py + length - t)
+            path.lineTo(px + t, py + length)
+            path.lineTo(px, py + length - t)
+            path.lineTo(px, py + t)
+            path.closeSubpath()
+            return path
+
+        mid_y = y + (h - thickness) / 2
+        inner_w = w - thickness
+        upper_h = mid_y - y - inset
+        lower_h = (y + h) - (mid_y + thickness) - inset
+
+        segs = {
+            "a": horiz(x + thickness * 0.4, y, inner_w),
+            "d": horiz(x + thickness * 0.4, y + h - thickness, inner_w),
+            "g": horiz(x + thickness * 0.4, mid_y, inner_w),
+            "f": vert(x, y + thickness * 0.5, upper_h),
+            "b": vert(x + w - thickness, y + thickness * 0.5, upper_h),
+            "e": vert(x, mid_y + thickness * 0.4, lower_h),
+            "c": vert(x + w - thickness, mid_y + thickness * 0.4, lower_h),
+        }
+
+        for name, path in segs.items():
+            if name not in active:
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(_NEON_OFF)
+                painter.drawPath(path)
+                continue
+            halo, glow, deep, mid, hot = _NEON_SEG_SHADES[name]
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(halo, thickness * 2.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.drawPath(path)
+            painter.setPen(QPen(glow, thickness * 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.drawPath(path)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(deep)
+            painter.drawPath(path)
+            painter.setBrush(mid)
+            painter.drawPath(path)
+            painter.setBrush(hot)
+            painter.drawPath(path)
+
+
+class SurvivalDaysPanel(HivePanel):
+    """Predicted overall survival as a neon seven-segment number."""
+
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet(
+            "QFrame { border: none; border-radius: 16px; background-color: #050608; }"
+        )
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, SURVIVAL_EDGE_GAP, 12, SURVIVAL_EDGE_GAP)
+        layout.setSpacing(8)
+
+        title = QLabel("Survival Days")
         title.setAlignment(Qt.AlignCenter)
+        title.setFixedHeight(18)
         title.setStyleSheet(
-            f"border: none; color: {TEXT_LIGHT}; font-size: 13px; font-weight: 500;"
+            f"border: none; background: transparent; color: {ACCENT_AMBER_SOFT}; "
+            f"font-size: 13px; font-weight: 600;"
         )
         layout.addWidget(title)
 
-        layout.addWidget(_muted_label("Patient ID"))
-        self.case_label = _value_label("No case loaded")
-        layout.addWidget(self.case_label)
+        self.digits = NeonDigits("000")
+        layout.addWidget(self.digits)
+        self.setFixedHeight(SURVIVAL_EDGE_GAP + 18 + 8 + 102 + SURVIVAL_EDGE_GAP)
 
-        layout.addWidget(_muted_label("Overall survival"))
-        self.survival_label = _value_label("—")
-        layout.addWidget(self.survival_label)
-
-        layout.addWidget(_muted_label("Predicted survival"))
-        self.predicted_label = _value_label("Run segmentation to predict")
-        layout.addWidget(self.predicted_label)
-
-        layout.addWidget(_muted_label("Tumor volume"))
-        self.volume_label = _value_label("—")
-        layout.addWidget(self.volume_label)
-        layout.addStretch()
-
-    def set_case(self, case_id: str, survival_days: Optional[float]) -> None:
-        self.case_label.setText(case_id)
-        if survival_days is None:
-            self.survival_label.setText("No label in metadata")
+    def set_days(self, days: Optional[float]) -> None:
+        if days is None:
+            self.digits.set_value(None)
         else:
-            self.survival_label.setText(format_survival(survival_days))
-        self.predicted_label.setText("Run segmentation to predict")
-        self.volume_label.setText("—")
-        self.setStyleSheet(_panel_style(ACCENT_TEAL))
-
-    def set_predictions(
-        self,
-        predicted_days: Optional[float],
-        tumor_cm3: Optional[float],
-    ) -> None:
-        if predicted_days is None:
-            self.predicted_label.setText("Unavailable (no survival head)")
-        else:
-            self.predicted_label.setText(format_survival(predicted_days))
-        if tumor_cm3 is None:
-            self.volume_label.setText("—")
-        else:
-            self.volume_label.setText(f"{tumor_cm3:.2f} cm\u00b3")
+            self.digits.set_value(int(round(float(days))))
 
 
 class PixelateEffect(QWidget):
@@ -500,7 +1348,7 @@ class ArcSpinner(QWidget):
         painter.end()
 
 
-class SlicePanel(QFrame):
+class SlicePanel(HivePanel):
     """
     A bordered panel that shows one anatomical plane of a 3D volume as a
     matplotlib image, with a slider underneath to scroll through slices
@@ -518,6 +1366,7 @@ class SlicePanel(QFrame):
         self.probs = None       # optional continuous 0-1 probability map, same shape
         self.labels = None      # optional int array, same shape: 0=background, 1..N=component id
         self.color_map = None   # optional {component_id: hex_color}, matching self.labels
+        self._bbox = None       # inclusive (lo, hi) of brain tissue, for zoomed square crop
 
         self.setFrameShape(QFrame.Box)
         # Pure black background (not the charcoal BG_PANEL used elsewhere)
@@ -526,29 +1375,30 @@ class SlicePanel(QFrame):
         # image instead of showing as a separate charcoal-colored frame
         # around it.
         self.setStyleSheet(
-            "QFrame { border: 1.5px solid #000000; border-radius: 16px; "
-            "background-color: #000000; }"
+            "QFrame { border: 1.5px solid #1a140c; border-radius: 16px; "
+            "background-color: #08080c; }"
         )
         self.setMinimumHeight(min_height)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.setSpacing(4)
+        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setSpacing(8)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(4)
         header.addStretch(1)
-        self.title_label = QLabel(title)
+        self._base_title = title.upper()
+        self.title_label = QLabel(self._base_title)
         self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setStyleSheet(f"border: none; color: {TEXT_LIGHT}; font-size: 13px; font-weight: 500;")
+        self.title_label.setStyleSheet(
+            f"border: none; color: {ACCENT_AMBER}; font-size: 11px; "
+            f"font-weight: 700; letter-spacing: 1.4px;"
+        )
         header.addWidget(self.title_label)
         header.addStretch(1)
-        self.maximize_btn = QPushButton("⛶")
-        self.maximize_btn.setFixedSize(22, 20)
-        self.maximize_btn.setStyleSheet(MAXIMIZE_BTN_STYLE)
-        self.maximize_btn.setToolTip("Maximize")
+        self.maximize_btn = _fullscreen_button("Maximize")
         header.addWidget(self.maximize_btn)
         layout.addLayout(header)
 
@@ -620,12 +1470,19 @@ class SlicePanel(QFrame):
 
         layout.addWidget(canvas_container, stretch=1)
 
+        slider_wrap = QWidget()
+        slider_wrap.setFixedHeight(28)
+        slider_wrap.setStyleSheet("background: transparent;")
+        slider_layout = QVBoxLayout(slider_wrap)
+        slider_layout.setContentsMargins(4, 6, 4, 2)
+        slider_layout.setSpacing(0)
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setEnabled(False)
         self.slider.valueChanged.connect(self._on_slider_changed)
-        layout.addWidget(self.slider)
-
-        self._base_title = title
+        slider_layout.addWidget(self.slider)
+        layout.addWidget(slider_wrap)
+        self._show_hive_empty()
+        self._sync_hive_overlay()
 
     def set_loading(self, active: bool):
         """Shows/hides the pixelate + scan-line + corner-arc loading
@@ -646,6 +1503,7 @@ class SlicePanel(QFrame):
             self.scan_line.stop()
             self.loading_animation.stop()
             self.loading_overlay.hide()
+        self._sync_hive_overlay()
 
     def set_volume(self, volume: np.ndarray):
         """volume: 3D numpy array (already normalized for display, 0-1 range)."""
@@ -654,6 +1512,7 @@ class SlicePanel(QFrame):
         self.probs = None
         self.labels = None
         self.color_map = None
+        self._bbox = _content_bbox(volume)
         n_slices = volume.shape[self.axis]
         self.slider.setEnabled(True)
         self.slider.setMinimum(0)
@@ -786,18 +1645,52 @@ class SlicePanel(QFrame):
             rgb[hit, 1] = 0.15
             rgb[hit, 2] = 0.15
 
+        shown = np.rot90(rgb)
         self.ax.clear()
-        self.ax.imshow(np.rot90(rgb))
+        self.ax.imshow(shown, aspect="equal", interpolation="bilinear")
+        self.ax.set_aspect("equal", adjustable="datalim")
+        self._apply_brain_zoom(shown.shape[0], shown.shape[1], rgb.shape[0])
         self.ax.axis("off")
         self.canvas.draw_idle()
 
-        self.title_label.setText(f"{self._base_title}  (slice {index})")
+        self.title_label.setText(f"{self._base_title}  (SLICE {index})")
+        self._sync_hive_overlay()
+
+    def _apply_brain_zoom(self, shown_h: int, shown_w: int, pre_rot_rows: int):
+        """
+        Crop the view to the brain bounding box after rot90 so the head
+        fills more of the panel without changing voxel aspect ratio.
+        """
+        if self._bbox is None:
+            return
+        lo, hi = self._bbox
+        if self.axis == 0:
+            r0, r1 = lo[1], hi[1]
+            c0, c1 = lo[2], hi[2]
+        elif self.axis == 1:
+            r0, r1 = lo[0], hi[0]
+            c0, c1 = lo[2], hi[2]
+        else:
+            r0, r1 = lo[0], hi[0]
+            c0, c1 = lo[1], hi[1]
+        # rot90: (r, c) -> new row = c, new col = (pre_rot_rows - 1 - r)
+        xs = [pre_rot_rows - 1 - r0, pre_rot_rows - 1 - r1]
+        ys = [c0, c1]
+        x0, x1 = min(xs) - 0.5, max(xs) + 0.5
+        y0, y1 = min(ys) - 0.5, max(ys) + 0.5
+        self.ax.set_xlim(max(-0.5, x0), min(shown_w - 0.5, x1))
+        self.ax.set_ylim(min(shown_h - 0.5, y1), max(-0.5, y0))
+
+    def _show_hive_empty(self):
+        self.ax.clear()
+        self.ax.set_facecolor("#000000")
+        self.ax.axis("off")
+        self.canvas.draw_idle()
 
     def set_maximized(self, is_max: bool):
-        """Swaps the button glyph/tooltip; actual show/hide of sibling
-        panels is handled by MainWindow.toggle_maximize()."""
         self.maximize_btn.setText("🗗" if is_max else "⛶")
         self.maximize_btn.setToolTip("Restore" if is_max else "Maximize")
+        self._sync_hive_overlay()
 
 
 def _inject_dark_page_style(html_path: str):
@@ -931,7 +1824,7 @@ def _inject_middle_click_pan(html_path: str):
         pass
 
 
-class Panel3D(QFrame):
+class Panel3D(HivePanel):
     """
     A bordered panel that shows an interactive 3D Plotly figure (rotate,
     zoom, pan) via an embedded web view. Qt has no native Plotly renderer,
@@ -953,42 +1846,46 @@ class Panel3D(QFrame):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setContentsMargins(12, 10, 12, 12)
         layout.setSpacing(4)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(4)
         header.addStretch(1)
-        self.title_label = QLabel(title)
-        self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setStyleSheet(f"border: none; color: {TEXT_LIGHT}; font-size: 13px; font-weight: 500;")
+        self.title_label = TechLabel(title)
         header.addWidget(self.title_label)
         header.addStretch(1)
-        self.maximize_btn = QPushButton("⛶")
-        self.maximize_btn.setFixedSize(22, 20)
-        self.maximize_btn.setStyleSheet(MAXIMIZE_BTN_STYLE)
-        self.maximize_btn.setToolTip("Maximize")
+        self.maximize_btn = _fullscreen_button("Maximize")
         header.addWidget(self.maximize_btn)
         layout.addLayout(header)
 
+        view_host = QWidget()
+        view_stack = QStackedLayout(view_host)
+        view_stack.setStackingMode(QStackedLayout.StackAll)
+
+        self.web_view = QWebEngineView()
+        self.web_view.setStyleSheet(f"background-color: {BG_PANEL}; border: none;")
+        self.web_view.page().setBackgroundColor(QColor(BG_PANEL))
+        self.web_view.setHtml(
+            f"<html><body style='margin:0;background:{BG_PANEL};'></body></html>"
+        )
+        view_stack.addWidget(self.web_view)
+
         self.placeholder_label = QLabel("(run segmentation to render)")
         self.placeholder_label.setAlignment(Qt.AlignCenter)
-        self.placeholder_label.setStyleSheet(f"border: none; color: {TEXT_MUTED}; font-size: 12px;")
-        layout.addWidget(self.placeholder_label, stretch=1)
+        self.placeholder_label.setStyleSheet(
+            f"border: none; color: {TEXT_MUTED}; font-size: 12px; background: {BG_PANEL};"
+        )
+        view_stack.addWidget(self.placeholder_label)
+        self.placeholder_label.raise_()
+        layout.addWidget(view_host, stretch=1)
 
-        self.web_view = None  # created lazily on first set_figure() call
         self._layout = layout
         self._temp_files = []  # keep references so temp files aren't GC'd/deleted early
 
     def set_figure(self, fig: go.Figure):
-        if self.web_view is None:
-            self.placeholder_label.hide()
-            self.web_view = QWebEngineView()
-            # A transparent-looking background on the QWebEngineView itself
-            # so there's no flash of default white before the page loads.
-            self.web_view.setStyleSheet(f"background-color: {BG_PANEL}; border: none;")
-            self._layout.addWidget(self.web_view, stretch=1)
+        self.placeholder_label.hide()
 
         # Hide Plotly's icon toolbar (zoom/pan/camera/reset buttons) — the
         # panel is still fully interactive via mouse drag/scroll, just
@@ -1008,12 +1905,12 @@ class Panel3D(QFrame):
         _inject_middle_click_pan(tmp.name)
         self._temp_files.append(tmp.name)
         self.web_view.load(QUrl.fromLocalFile(tmp.name))
+        QTimer.singleShot(0, self._sync_hive_overlay)
 
     def set_maximized(self, is_max: bool):
-        """Swaps the button glyph/tooltip; actual show/hide of sibling
-        panels is handled by MainWindow.toggle_maximize()."""
         self.maximize_btn.setText("🗗" if is_max else "⛶")
         self.maximize_btn.setToolTip("Restore" if is_max else "Maximize")
+        self._sync_hive_overlay()
 
 
 def _style_ui_figure(fig: go.Figure) -> go.Figure:
@@ -1097,7 +1994,7 @@ class MainWindow(QMainWindow):
 
         avail = screen.availableGeometry()
         width = max(min(int(avail.width() * 0.85), 1500), 900)
-        height = max(min(int(avail.height() * 0.85), 950), 600)
+        height = max(min(int(avail.height() * 0.88), 980), 680)
         self.resize(width, height)
 
         x = avail.x() + (avail.width() - width) // 2
@@ -1106,7 +2003,8 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Brain Tumor Viewer")
+        self.setWindowTitle("A.I. Copilot for Cancer Detection and Patient Survival Prediction")
+        self.setWindowIcon(_asset_icon(_APP_ICO_PATH if _APP_ICO_PATH.is_file() else _APP_ICON_PATH))
         self._size_to_screen()
 
         # Current case state — shared between "Enter image" and "Run
@@ -1117,52 +2015,46 @@ class MainWindow(QMainWindow):
         self._display_affine: Optional[np.ndarray] = None
         self._model = None
         self._device = None
+        self._worker_thread: Optional[QThread] = None
+        self._worker: Optional[_BackgroundJob] = None
+        self._busy = False
         self._survival_stats = load_survival_stats()
         try:
             self._survival_table = load_survival_days()
         except (FileNotFoundError, KeyError):
             self._survival_table = {}
-        self._current_report: Optional[dict] = None
-
-        central = QWidget()
+        shell = RootShell()
 
         # ---------------- Left column: image input + patient record -------
         left = QVBoxLayout()
         left.setSpacing(SPACING)
 
-        self.enter_image_btn = QPushButton("Enter image")
-        self.enter_image_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 14px; "
-            f"padding: 10px {SPACING}px; background-color: {BG_PANEL}; color: {ACCENT_TEAL}; font-weight: 500; }}"
-            f"QPushButton:hover {{ background-color: #3a3a3c; }}"
-            f"QPushButton:pressed {{ background-color: #48484a; }}"
-        )
-        self.enter_image_btn.clicked.connect(self.on_enter_image)
-        left.addWidget(self.enter_image_btn)
+        self.drop_zone = DropVolumeZone()
+        self.drop_zone.folder_chosen.connect(self._load_folder)
+        self.drop_zone.setMinimumHeight(88)
 
-        # Lists every .nii/.nii.gz file found in the selected folder;
-        # switching the selection re-previews that file in the 2D panels.
-        # Hidden until a folder with at least one match has been loaded.
-        self.file_selector = QComboBox()
-        self.file_selector.setStyleSheet(FILE_SELECTOR_STYLE)
-        self.file_selector.setVisible(False)
-        self.file_selector.currentIndexChanged.connect(self.on_file_selected)
-        left.addWidget(self.file_selector)
-
-        # Primary action gets the one filled accent button in this view
-        # (Apple's restraint pattern: exactly one solid-accent button per
-        # screen, everything else stays quiet/secondary). The play glyph
-        # reinforces "this executes something" vs. "Enter image" which is
-        # just a selection/input action.
-        self.run_seg_btn = QPushButton("\u25b6  Run segmentation")
+        self.run_seg_btn = QPushButton()
+        self.run_seg_btn.setFixedSize(88, 88)
+        self.run_seg_btn.setIcon(_asset_icon(_RUN_ICON_PATH))
+        self.run_seg_btn.setIconSize(QSize(56, 56))
+        self.run_seg_btn.setToolTip("Run segmentation")
+        self.run_seg_btn.setCursor(Qt.PointingHandCursor)
+        self.run_seg_btn.setEnabled(False)
         self.run_seg_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 14px; "
-            f"padding: 10px {SPACING}px; background-color: {ACCENT_TEAL}; color: #ffffff; font-weight: 500; }}"
-            f"QPushButton:hover {{ background-color: {ACCENT_TEAL_SOFT}; }}"
-            f"QPushButton:pressed {{ background-color: #0060c4; }}"
+            f"QPushButton {{ border: 1.5px solid {ACCENT_AMBER}; border-radius: 16px; "
+            f"background-color: #2a1c0c; padding: 8px; }}"
+            f"QPushButton:hover {{ background-color: #3a2810; border-color: {ACCENT_AMBER_SOFT}; }}"
+            f"QPushButton:pressed {{ background-color: #c46800; }}"
+            f"QPushButton:disabled {{ background-color: #2c2c2e; border-color: #4a3a22; }}"
         )
         self.run_seg_btn.clicked.connect(self.on_run_segmentation)
-        left.addWidget(self.run_seg_btn)
+
+        drop_row = QHBoxLayout()
+        drop_row.setContentsMargins(0, 0, 0, 0)
+        drop_row.setSpacing(8)
+        drop_row.addWidget(self.drop_zone, 1)
+        drop_row.addWidget(self.run_seg_btn, 0, Qt.AlignTop)
+        left.addLayout(drop_row)
 
         self.busy_bar = QProgressBar()
         self.busy_bar.setRange(0, 0)  # indeterminate — pulses while active
@@ -1170,57 +2062,18 @@ class MainWindow(QMainWindow):
         self.busy_bar.hide()
         left.addWidget(self.busy_bar)
 
-        self.status_label = QLabel("")
-        self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet(f"font-size: 11px; color: {TEXT_MUTED};")
-        left.addWidget(self.status_label)
+        self.patients_record_panel = PatientRecordPanel()
+        left.addWidget(self.patients_record_panel, 1)
 
-        self.patients_record_panel = PatientRecordPanel(min_height=150)
-        left.addWidget(self.patients_record_panel)
-
-        # Report summary — built only from what this single whole-tumor
-        # mask can honestly support, plus the survival prediction the
-        # patients-record panel already computed. Left-aligned body text,
-        # unlike the centered titles on the 2D/3D panels, since this is
-        # read top-to-bottom like a small document rather than glanced at
-        # like a chart title.
-        self.report_frame = QFrame()
-        self.report_frame.setStyleSheet(_panel_style())
-        self.report_frame.setMinimumHeight(150)
-        report_layout = QVBoxLayout(self.report_frame)
-        report_layout.setContentsMargins(SPACING, SPACING, SPACING, SPACING)
-        report_layout.setSpacing(6)
-
-        report_title = QLabel("Report summary")
-        report_title.setStyleSheet(f"border: none; color: {TEXT_LIGHT}; font-size: 13px; font-weight: 600;")
-        report_layout.addWidget(report_title)
-
-        self.report_body_label = QLabel("Run segmentation to generate a report.")
-        self.report_body_label.setWordWrap(True)
-        self.report_body_label.setStyleSheet(f"border: none; color: {TEXT_MUTED}; font-size: 11px;")
-        report_layout.addWidget(self.report_body_label)
-        report_layout.addStretch()
-
-        left.addWidget(self.report_frame)
-
-        self.export_report_btn = QPushButton("Export PDF report")
-        self.export_report_btn.setEnabled(False)
-        self.export_report_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 14px; "
-            f"padding: 10px {SPACING}px; background-color: {BG_PANEL}; color: {ACCENT_TEAL}; font-weight: 500; }}"
-            f"QPushButton:hover {{ background-color: #3a3a3c; }}"
-            f"QPushButton:pressed {{ background-color: #48484a; }}"
-            f"QPushButton:disabled {{ color: {TEXT_MUTED}; }}"
-        )
-        self.export_report_btn.clicked.connect(self.on_export_report)
-        left.addWidget(self.export_report_btn)
-
-        left.addStretch()
+        self.survival_panel = SurvivalDaysPanel()
+        left.addWidget(self.survival_panel)
+        left.addSpacing(22)
+        left.addWidget(SquadCredit())
 
         self.left_container = QWidget()
         self.left_container.setLayout(left)
-        self.left_container.setMinimumWidth(160)
-        self.left_container.setMaximumWidth(240)  # keeps this column narrow at any window size
+        self.left_container.setMinimumWidth(200)
+        self.left_container.setMaximumWidth(280)
 
         # ---------------- Center column: 2D views --------------------------
         # min_height is kept modest (not the visual target size) — it's only
@@ -1244,8 +2097,8 @@ class MainWindow(QMainWindow):
         # ---------------- Right column: 3D views ---------------------------
         right = QVBoxLayout()
         right.setSpacing(SPACING)
-        self.tumor_3d_panel = Panel3D("3D tumor", min_height=150, accent=ACCENT_CORAL)
-        self.brain_3d_panel = Panel3D("3D brain view", min_height=200, accent=ACCENT_TEAL)
+        self.tumor_3d_panel = Panel3D("3D tumor", min_height=150, accent=ACCENT_AMBER)
+        self.brain_3d_panel = Panel3D("3D brain view", min_height=200, accent=ACCENT_AMBER)
         # brain view gets more of the extra vertical space than the smaller
         # tumor-only panel above it, matching the original wireframe's
         # proportions (small panel on top, tall panel below)
@@ -1263,14 +2116,25 @@ class MainWindow(QMainWindow):
         # and no scroll-area fallback needed, since the minimum heights above
         # were chosen to always fit within _size_to_screen()'s smallest
         # supported window size.
-        root = QHBoxLayout(central)
-        root.setSpacing(SPACING)
-        root.setContentsMargins(SPACING, SPACING, SPACING, SPACING)
-        root.addWidget(self.left_container, stretch=0)
-        root.addWidget(self.center_container, stretch=3)
-        root.addWidget(self.right_container, stretch=2)
+        self.sep_left = _column_separator()
+        self.sep_right = _column_separator()
 
-        self.setCentralWidget(central)
+        body = QHBoxLayout()
+        body.setSpacing(10)
+        body.setContentsMargins(SPACING, 10, SPACING, SPACING)
+        body.addWidget(self.left_container, stretch=0)
+        body.addWidget(self.sep_left)
+        body.addWidget(self.center_container, stretch=3)
+        body.addWidget(self.sep_right)
+        body.addWidget(self.right_container, stretch=2)
+
+        page = QVBoxLayout(shell)
+        page.setContentsMargins(0, 0, 0, 0)
+        page.setSpacing(0)
+        page.addWidget(AppHeader())
+        page.addLayout(body, stretch=1)
+
+        self.setCentralWidget(shell)
 
         # ---------------- Maximize / restore wiring --------------------------
         self.center_panels = [self.sagittal_panel, self.axial_panel, self.coronal_panel]
@@ -1292,6 +2156,8 @@ class MainWindow(QMainWindow):
             self.left_container.show()
             self.center_container.show()
             self.right_container.show()
+            self.sep_left.show()
+            self.sep_right.show()
             for p in self.all_panels:
                 p.show()
             panel.set_maximized(False)
@@ -1302,6 +2168,8 @@ class MainWindow(QMainWindow):
             self._maximized_panel.set_maximized(False)
 
         self.left_container.hide()
+        self.sep_left.hide()
+        self.sep_right.hide()
         if panel in self.center_panels:
             self.right_container.hide()
             self.center_container.show()
@@ -1316,73 +2184,116 @@ class MainWindow(QMainWindow):
         panel.set_maximized(True)
         self._maximized_panel = panel
 
+    def _start_background(self, fn, on_ok, on_err) -> bool:
+        if self._busy or (self._worker_thread is not None and self._worker_thread.isRunning()):
+            return False
+        self._busy = True
+        worker = _BackgroundJob(fn)
+        thread = QThread()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.ok.connect(on_ok)
+        worker.err.connect(on_err)
+        worker.ok.connect(thread.quit)
+        worker.err.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_worker_finished)
+        self._worker = worker
+        self._worker_thread = thread
+        thread.start()
+        return True
+
+    def _on_worker_finished(self):
+        self._worker = None
+        self._worker_thread = None
+
     def on_run_segmentation(self):
-        # Reuse the folder already loaded via "Enter image" if there is
-        # one — only prompt when no case is loaded yet, so the two buttons
-        # share a single "current patient" instead of asking twice.
-        if self.current_folder is None:
-            folder = QFileDialog.getExistingDirectory(
-                self, "Select folder with t1, t1ce, t2, flair NIfTI files"
-            )
-            if not folder:
-                return
-            if not self._load_folder(Path(folder)):
-                return
+        if self.current_folder is None or self._busy:
+            return
 
         folder_path = self.current_folder
-        try:
-            modality_paths = self._find_modality_files(folder_path)
-            display_volume, model_input, affine = self._load_and_stack(modality_paths)
-        except Exception as exc:
-            QMessageBox.critical(self, "Failed to load scans", str(exc))
-            return
-
-        try:
-            model = self._get_model()
-        except Exception as exc:
-            QMessageBox.critical(
-                self, "Failed to load model",
-                f"{exc}\n\nExpected checkpoint at:\n{MODEL_PATH}"
-            )
-            return
+        survival_stats = self._survival_stats
 
         self.busy_bar.show()
+        self.run_seg_btn.setEnabled(False)
         self._set_2d_loading(True)
-        self.status_label.setText("Running segmentation...")
-        QApplication.processEvents()  # let the UI repaint before the model blocks
 
-        try:
-            mask, probs, predicted_days = self._run_model(
-                model, model_input, target_shape=display_volume.shape
+        def job():
+            modality_paths = MainWindow._find_modality_files(folder_path)
+            display_volume, model_input, affine = MainWindow._load_and_stack(modality_paths)
+            model, device = _ensure_model()
+            mask, probs, predicted_days = MainWindow._run_model_static(
+                model, device, model_input, display_volume.shape, survival_stats
             )
-        except Exception as exc:
-            self.busy_bar.hide()
-            self._set_2d_loading(False)
-            QMessageBox.critical(self, "Inference failed", str(exc))
-            self.status_label.setText("")
-            return
+            volume_3d, mask_3d, spacing = _prepare_3d(display_volume, mask, affine)
+            has_tumor = mask_3d is not None and float(np.asarray(mask_3d).sum()) > 0
+            tumor_fig = build_tumor_figure(mask_3d, spacing) if has_tumor else None
+            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing)
+            return {
+                "display_volume": display_volume,
+                "affine": affine,
+                "mask": mask,
+                "probs": probs,
+                "predicted_days": predicted_days,
+                "tumor_fig": tumor_fig,
+                "brain_fig": brain_fig,
+            }
+
+        self._start_background(job, self._on_segmentation_ready, self._on_segmentation_failed)
+
+    def _on_segmentation_ready(self, result: dict):
+        display_volume = result["display_volume"]
+        affine = result["affine"]
+        mask = result["mask"]
+        probs = result["probs"]
 
         self.sagittal_panel.set_volume(display_volume)
         self.axial_panel.set_volume(display_volume)
         self.coronal_panel.set_volume(display_volume)
 
         voxel_vol_cm3 = self._voxel_volume_cm3(affine)
-        labels, components, color_map = self._label_tumor_components(mask, probs, voxel_vol_cm3)
-
+        labels, _components, color_map = self._label_tumor_components(mask, probs, voxel_vol_cm3)
         self.sagittal_panel.set_detection(probs, labels, color_map)
         self.axial_panel.set_detection(probs, labels, color_map)
         self.coronal_panel.set_detection(probs, labels, color_map)
         self._set_2d_loading(False)
 
-        tumor_cm3 = float(mask.sum()) * voxel_vol_cm3
-        self.status_label.setText(f"Tumor volume: {tumor_cm3:.2f} cm\u00b3")
-        self.patients_record_panel.set_predictions(predicted_days, tumor_cm3)
+        self.patients_record_panel.set_volume(float(mask.sum()) * voxel_vol_cm3)
+        self.survival_panel.set_days(result["predicted_days"])
+        self._display_volume = display_volume
+        self._display_affine = affine
 
-        report = self._compute_report(mask, probs, display_volume, affine, predicted_days, components)
-        self._update_report_panel(report)
-
-        self._update_3d_views(display_volume, mask, affine)
         self.busy_bar.hide()
+        self.run_seg_btn.setEnabled(True)
+        self._busy = False
+
+        # 2D results stay on this window. Load 3D on the next tick into the
+        # already-created web views so Qt does not remount the right column
+        # (that remount was flashing as if the window closed and reopened).
+        self._pending_3d = (result.get("tumor_fig"), result.get("brain_fig"))
+        QTimer.singleShot(0, self._apply_pending_3d)
+
+    def _apply_pending_3d(self):
+        pending = getattr(self, "_pending_3d", None)
+        self._pending_3d = None
+        if not pending:
+            return
+        tumor_fig, brain_fig = pending
+        try:
+            if tumor_fig is not None:
+                self.tumor_3d_panel.set_figure(tumor_fig)
+            if brain_fig is not None:
+                self.brain_3d_panel.set_figure(brain_fig)
+        except Exception as exc:
+            QMessageBox.warning(self, "3D render failed", str(exc))
+
+    def _on_segmentation_failed(self, message: str):
+        self.busy_bar.hide()
+        self._set_2d_loading(False)
+        self.run_seg_btn.setEnabled(self.current_folder is not None)
+        self._busy = False
+        QMessageBox.critical(self, "Inference failed", message)
 
     def _label_tumor_components(self, mask: np.ndarray, probs: np.ndarray, voxel_vol_cm3: float):
         """
@@ -1522,88 +2433,71 @@ class MainWindow(QMainWindow):
                     f"(all 4 modalities must be co-registered to the same grid)"
                 )
 
-        # Display volume: normalized FLAIR, 0-1 range
+        # Pad every modality with the same centered cube-pad, then resize
+        # to the square display grid. The model is run at INFERENCE_SIZE
+        # and the mask is mapped back to this same grid.
+        pads = _cube_pads(arrays["t2f"].shape)
+        for key in MODALITIES:
+            arrays[key] = _apply_pads(arrays[key], pads)
+
         flair = arrays["t2f"]
         d_min, d_max = float(flair.min()), float(flair.max())
         display_volume = (flair - d_min) / (d_max - d_min) if d_max > d_min else flair
+        display_volume = _resize_exact(display_volume, STANDARD_DISPLAY_SHAPE, order=1)
 
-        # Standardize to a fixed shape so every case displays at consistent
-        # size/proportions regardless of native resolution. The mask that
-        # comes back from the model will be upsampled to this same
-        # standardized shape (see on_run_segmentation/_run_model), so it
-        # stays pixel-aligned with this display volume automatically.
-        display_volume, affine = _standardize_volume(display_volume, affine)
+        padded_shape = np.array(arrays["t2f"].shape, dtype=np.float64)
+        native_spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0))
+        new_spacing = native_spacing * (padded_shape / np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64))
+        affine = np.eye(4)
+        affine[0, 0] = new_spacing[0]
+        affine[1, 1] = new_spacing[1]
+        affine[2, 2] = new_spacing[2]
 
-        # Same per-volume z-score the training dataset uses, stacked in the
-        # same channel order as config.MODALITIES.
-        channels = [_normalize(arrays[key]) for key in MODALITIES]
+        channels = [
+            _resize_exact(_normalize(arrays[key]), STANDARD_DISPLAY_SHAPE, order=1)
+            for key in MODALITIES
+        ]
         stacked = np.stack(channels, axis=0)  # [4, D, H, W]
         tensor = torch.from_numpy(stacked).unsqueeze(0).float()  # [1, 4, D, H, W]
         return display_volume, tensor, affine
 
     def _get_model(self):
-        if getattr(self, "_model", None) is not None:
-            return self._model
-
-        if not MODEL_PATH.exists():
-            raise FileNotFoundError(f"Checkpoint not found: {MODEL_PATH}")
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        state_dict = torch.load(MODEL_PATH, map_location=device)
-
-        model = MultiTaskUNet3D(in_channels=4, out_channels=1)
-        try:
-            model.load_state_dict(state_dict)
-        except RuntimeError:
-            model.load_segmentation_weights(state_dict)
-
-        model.to(device)
-        model.eval()
+        model, device = _ensure_model()
         self._model = model
         self._device = device
         if self._survival_stats is None:
             self._survival_stats = load_survival_stats()
         return model
 
-    def _run_model(self, model, model_input: torch.Tensor, target_shape: tuple):
-        """
-        Resize the input to INFERENCE_SIZE, run both heads, upsample the
-        probability map back to native resolution, and return
-        (mask, probs, days). `probs` is the raw sigmoid output (0-1 per
-        voxel) — kept rather than discarded after thresholding, so the UI
-        can show actual model confidence instead of a hard yes/no mask.
-        """
-        device = self._device
+    @staticmethod
+    def _run_model_static(model, device, model_input: torch.Tensor, target_shape: tuple, survival_stats):
         x = model_input.to(device)
-
         resized = torch.nn.functional.interpolate(
             x, size=INFERENCE_SIZE, mode="trilinear", align_corners=False
         )
-
         with torch.no_grad():
             outputs = run_model(model, resized)
             logits, _ = split_model_outputs(outputs)
             probs = torch.sigmoid(logits)
-
         probs_native = torch.nn.functional.interpolate(
             probs, size=target_shape, mode="trilinear", align_corners=False
         )
         probs_np = probs_native.squeeze(0).squeeze(0).cpu().numpy()
         mask = (probs_np > 0.5).astype(np.float32)
-
         predicted_days = None
-        if self._survival_stats is not None:
+        if survival_stats is not None:
             try:
                 predicted_days = predict_survival_days(
-                    model,
-                    resized.squeeze(0),
-                    device,
-                    self._survival_stats,
+                    model, resized.squeeze(0), device, survival_stats
                 )
             except AttributeError:
                 predicted_days = None
-
         return mask, probs_np, predicted_days
+
+    def _run_model(self, model, model_input: torch.Tensor, target_shape: tuple):
+        return self._run_model_static(
+            model, self._device, model_input, target_shape, self._survival_stats
+        )
 
     @staticmethod
     def _voxel_volume_cm3(affine: np.ndarray) -> float:
@@ -1612,273 +2506,14 @@ class MainWindow(QMainWindow):
         voxel_volume_mm3 = float(np.prod(voxel_dims_mm))
         return voxel_volume_mm3 / 1000.0
 
-    def _compute_report(
-        self,
-        mask: np.ndarray,
-        probs: np.ndarray,
-        display_volume: np.ndarray,
-        affine: np.ndarray,
-        predicted_days: Optional[float],
-        components: list,
-    ) -> dict:
-        """
-        Builds the metrics a single whole-tumor binary mask can honestly
-        support. This model predicts one class only, so tumor core and
-        edema are NOT included here — those need a retrained multi-class
-        (WT/TC/ET) model, since they can't be derived from a single mask
-        after the fact. Predicted survival is included since the
-        multi-task model already computes it separately.
-
-        `avg_confidence` is the mean of the model's raw sigmoid output
-        (probs) across only the voxels included in the mask — it reflects
-        how sure the model was about the region it flagged, not an
-        independently validated or calibrated probability. `components`
-        is the same per-tumor list from _label_tumor_components(), passed
-        in rather than recomputed here, since the caller already needs it
-        for the 2D heatmap coloring.
-        """
-        voxel_vol_cm3 = self._voxel_volume_cm3(affine)
-        total_voxels = int(mask.sum())
-        total_cm3 = total_voxels * voxel_vol_cm3
-        n_components = len(components)
-
-        if total_voxels > 0:
-            centroid = np.array(ndi_center_of_mass(mask))
-            shape = np.array(mask.shape)
-            rel = (centroid - shape / 2.0) / (shape / 2.0)  # -1..1 per axis
-
-            # Assumes BraTS-style axis ordering (0=L-R, 1=A-P, 2=S-I), same
-            # assumption already used for the sagittal/coronal/axial panels.
-            # This isn't verified against the file's own orientation, so
-            # it's a rough geometric description relative to the volume's
-            # center, not a clinically confirmed laterality reading.
-            lr = "right" if rel[0] > 0.1 else ("left" if rel[0] < -0.1 else "midline")
-            ap = "posterior" if rel[1] > 0.1 else ("anterior" if rel[1] < -0.1 else "central")
-            si = "superior" if rel[2] > 0.1 else ("inferior" if rel[2] < -0.1 else "central")
-            location = f"{lr}, {ap}, {si} (approximate)"
-            avg_confidence = float(probs[mask > 0.5].mean())
-        else:
-            location = "n/a — no tumor voxels detected"
-            avg_confidence = float("nan")
-
-        try:
-            brain_level = brain_surface_level(display_volume)
-            brain_voxels = int((display_volume > brain_level).sum())
-            percent_of_brain = (total_voxels / brain_voxels * 100.0) if brain_voxels > 0 else float("nan")
-        except ValueError:
-            percent_of_brain = float("nan")
-
-        return {
-            "total_cm3": total_cm3,
-            "n_components": n_components,
-            "location": location,
-            "percent_of_brain": percent_of_brain,
-            "predicted_days": predicted_days,
-            "avg_confidence": avg_confidence,
-            "components": components,
-        }
-
-    def _update_report_panel(self, report: dict):
-        self._current_report = report
-        lines = [
-            f"Total lesion volume: {report['total_cm3']:.2f} cm&sup3;",
-            f"Lesion components: {report['n_components']}",
-            f"Approx. location: {report['location']}",
-        ]
-        if not np.isnan(report["percent_of_brain"]):
-            lines.append(f"% of brain volume: {report['percent_of_brain']:.1f}%")
-
-        components = report.get("components") or []
-        if components:
-            # Per-tumor confidence, listed by the same color used in the
-            # 2D heatmap — a colored dot next to each entry, not just a
-            # color name, so the report and the image visually match at a
-            # glance.
-            lines.append("<br><b>Confidence by tumor:</b>")
-            for comp in components:
-                swatch = f"<span style='color:{comp['color_hex']};'>&#9679;</span>"
-                lines.append(
-                    f"{swatch} {comp['color_name']} (#{comp['rank']}): "
-                    f"{comp['confidence'] * 100:.1f}% conf., {comp['volume_cm3']:.2f} cm&sup3;"
-                )
-        elif not np.isnan(report.get("avg_confidence", float("nan"))):
-            lines.append(f"Avg. model confidence: {report['avg_confidence'] * 100:.1f}%")
-
-        if report.get("predicted_days") is not None:
-            lines.append(f"Predicted survival: {format_survival(report['predicted_days'])}")
-
-        self.report_body_label.setTextFormat(Qt.RichText)
-        self.report_body_label.setText("<br>".join(lines))
-        self.export_report_btn.setEnabled(True)
-
-    def on_export_report(self):
-        if not self._current_report:
-            return
-
-        default_name = f"{self.current_folder.name if self.current_folder else 'patient'}_report.pdf"
-        path, _ = QFileDialog.getSaveFileName(self, "Save PDF report", default_name, "PDF files (*.pdf)")
-        if not path:
-            return
-
-        try:
-            self._export_pdf(path, self._current_report)
-        except Exception as exc:
-            QMessageBox.critical(self, "Failed to export report", str(exc))
-            return
-
-        QMessageBox.information(self, "Report exported", f"Saved to:\n{path}")
-
-    def _export_pdf(self, path: str, report: dict):
-        """
-        Builds a one-page PDF summary using reportlab. Kept as a local
-        import since this is the only place in the file that needs it —
-        matches the "load heavy dependencies where they're used" pattern
-        already used for the MONAI-adjacent model imports elsewhere.
-        """
-        from reportlab.lib import colors
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import inch
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-
-        doc = SimpleDocTemplate(path, pagesize=letter, topMargin=0.6 * inch, bottomMargin=0.6 * inch)
-        styles = getSampleStyleSheet()
-        title_style = ParagraphStyle("TitleCustom", parent=styles["Title"], fontSize=16)
-        disclaimer_style = ParagraphStyle(
-            "Disclaimer", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#8a1c1c")
-        )
-
-        disclaimer = (
-            "This report is generated by an automated research pipeline and is NOT a "
-            "diagnostic or clinical report. It has not been reviewed by a radiologist. "
-            "The current model predicts whole-tumor extent only \u2014 tumor core and edema "
-            "sub-regions are not available without a retrained multi-class model. Location "
-            "is a rough geometric estimate relative to the volume center, not a confirmed "
-            "anatomical reading. Predicted survival is a model estimate, not a clinical "
-            "prognosis. Model confidence is the average of the model's own raw output "
-            "probability within the flagged region \u2014 it has not been independently "
-            "calibrated or validated, and should not be read as a statistically precise "
-            "likelihood."
-        )
-
-        story = [
-            Paragraph("Brain Tumor Segmentation \u2014 Report Summary", title_style),
-            Spacer(1, 4),
-            Paragraph(disclaimer, disclaimer_style),
-            Spacer(1, 14),
-        ]
-
-        patient_code = self.current_folder.name if self.current_folder else "unknown"
-        meta_table = Table(
-            [
-                ["Patient / case folder", patient_code],
-                ["Report generated", datetime.now().strftime("%Y-%m-%d %H:%M")],
-            ],
-            colWidths=[2 * inch, 4 * inch],
-        )
-        meta_table.setStyle(TableStyle([
-            ("FONTSIZE", (0, 0), (-1, -1), 10),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ("TEXTCOLOR", (0, 0), (0, -1), colors.grey),
-        ]))
-        story.append(meta_table)
-        story.append(Spacer(1, 16))
-
-        story.append(Paragraph("Metrics", styles["Heading2"]))
-        percent_text = (
-            f"{report['percent_of_brain']:.1f}%" if not np.isnan(report["percent_of_brain"]) else "n/a"
-        )
-        confidence_text = (
-            f"{report['avg_confidence'] * 100:.1f}%"
-            if not np.isnan(report.get("avg_confidence", float("nan")))
-            else "n/a"
-        )
-        survival_text = (
-            format_survival(report["predicted_days"])
-            if report.get("predicted_days") is not None
-            else "n/a"
-        )
-        metric_table = Table(
-            [
-                ["Metric", "Value"],
-                ["Total lesion volume", f"{report['total_cm3']:.2f} cm\u00b3"],
-                ["Lesion components", str(report["n_components"])],
-                ["Approximate location", report["location"]],
-                ["% of brain volume", percent_text],
-                ["Avg. model confidence", confidence_text],
-                ["Predicted survival", survival_text],
-            ],
-            colWidths=[2.5 * inch, 3 * inch],
-        )
-        metric_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTSIZE", (0, 0), (-1, -1), 10),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f2f2")]),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ]))
-        story.append(metric_table)
-
-        components = report.get("components") or []
-        if components:
-            story.append(Spacer(1, 16))
-            story.append(Paragraph("Confidence by Tumor", styles["Heading2"]))
-            story.append(Paragraph(
-                "Colors distinguish separate lesions from each other for reference "
-                "across this report and the app's image views \u2014 they are not a "
-                "standardized clinical color scheme.",
-                disclaimer_style,
-            ))
-            story.append(Spacer(1, 6))
-
-            comp_rows = [["#", "Color", "Confidence", "Volume"]]
-            comp_style_commands = [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTSIZE", (0, 0), (-1, -1), 10),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ]
-            for row_index, comp in enumerate(components, start=1):
-                comp_rows.append([
-                    str(comp["rank"]),
-                    comp["color_name"],
-                    f"{comp['confidence'] * 100:.1f}%",
-                    f"{comp['volume_cm3']:.2f} cm\u00b3",
-                ])
-                # Tint the Color cell with the tumor's actual assigned
-                # color, so the table visually matches the app's heatmap.
-                comp_style_commands.append(
-                    ("BACKGROUND", (1, row_index), (1, row_index), colors.HexColor(comp["color_hex"]))
-                )
-                comp_style_commands.append(
-                    ("TEXTCOLOR", (1, row_index), (1, row_index), colors.white)
-                )
-
-            comp_table = Table(comp_rows, colWidths=[0.5 * inch, 1.5 * inch, 1.5 * inch, 1.5 * inch])
-            comp_table.setStyle(TableStyle(comp_style_commands))
-            story.append(comp_table)
-
-        doc.build(story)
-
-    def on_enter_image(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select patient folder")
-        if not folder:
-            return
-        self._load_folder(Path(folder))
-
     def _load_folder(self, folder_path: Path) -> bool:
         """
-        Scans a patient folder for every .nii/.nii.gz file, populates the
-        file selector dropdown with all of them, and previews a sensible
-        default (a FLAIR-tagged file if present, else the first one found).
-        Shared by "Enter image" and "Run segmentation" so both act on the
-        same current case. Returns False (with a dialog shown) if the
-        folder has no matching files.
+        Loads a patient folder and previews FLAIR (or the first NIfTI).
+        Heavy I/O runs on a worker thread so the 2D loading animation can paint.
         """
+        if self._busy:
+            return False
+        folder_path = Path(folder_path)
         nii_files = sorted(folder_path.glob("*.nii*"))
         if not nii_files:
             QMessageBox.warning(
@@ -1890,46 +2525,48 @@ class MainWindow(QMainWindow):
         self.current_folder = folder_path
         self._nii_files = nii_files
         case_id = folder_path.name
+        self.drop_zone.set_case(case_id)
         self.patients_record_panel.set_case(
             case_id, self._survival_table.get(case_id)
         )
+        self.survival_panel.set_days(None)
+        self.run_seg_btn.setEnabled(False)
 
-        self.file_selector.blockSignals(True)
-        self.file_selector.clear()
-        self.file_selector.addItems([f.name for f in nii_files])
-        self.file_selector.blockSignals(False)
-        self.file_selector.setVisible(True)
-
-        # Prefer previewing the FLAIR volume by default — it's the same
-        # background volume Run segmentation displays results on, so the
-        # preview matches what you'll see after running the model.
         default_index = 0
         for i, f in enumerate(nii_files):
             if re.search(r"[_-](t2f|flair)[_.]", f.name, re.IGNORECASE):
                 default_index = i
                 break
+        preview_path = nii_files[default_index]
 
-        self.file_selector.setCurrentIndex(default_index)
-        self._load_and_display(nii_files[default_index])
+        self._set_2d_loading(True)
+
+        def job():
+            return MainWindow._load_volume(str(preview_path))
+
+        started = self._start_background(job, self._on_preview_ready, self._on_preview_failed)
+        if not started:
+            self._set_2d_loading(False)
+            self.run_seg_btn.setEnabled(True)
+            return False
         return True
 
-    def on_file_selected(self, index: int):
-        if 0 <= index < len(self._nii_files):
-            self._load_and_display(self._nii_files[index])
-
-    def _load_and_display(self, path: Path):
-        try:
-            volume, affine = self._load_volume(str(path))
-        except Exception as exc:
-            QMessageBox.critical(self, "Failed to load volume", str(exc))
-            return
-
+    def _on_preview_ready(self, result):
+        volume, affine = result
         self.sagittal_panel.set_volume(volume)
         self.axial_panel.set_volume(volume)
         self.coronal_panel.set_volume(volume)
         self._display_volume = volume
         self._display_affine = affine
-        self._update_3d_views(volume, None, affine)
+        self._set_2d_loading(False)
+        self.run_seg_btn.setEnabled(True)
+        self._busy = False
+
+    def _on_preview_failed(self, message: str):
+        self._set_2d_loading(False)
+        self.run_seg_btn.setEnabled(self.current_folder is not None)
+        self._busy = False
+        QMessageBox.critical(self, "Failed to load volume", message)
 
     @staticmethod
     def _load_volume(path: str):
@@ -1955,8 +2592,24 @@ class MainWindow(QMainWindow):
         return _standardize_volume(data, img.affine)
 
 
+def _pin_windows_app_id():
+    """Stop Windows from pinning the generic python.exe icon on the taskbar."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "UniKL.MIIT.AICopilot.TumorViewer"
+        )
+    except Exception:
+        pass
+
+
 def main():
+    _pin_windows_app_id()
     app = QApplication(sys.argv)
+    icon = _asset_icon(_APP_ICO_PATH if _APP_ICO_PATH.is_file() else _APP_ICON_PATH)
+    app.setWindowIcon(icon)
     app.setStyleSheet(APP_STYLESHEET)
     window = MainWindow()
     window.show()
