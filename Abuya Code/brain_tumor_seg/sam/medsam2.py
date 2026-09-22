@@ -58,7 +58,7 @@ class MedSAM2Refiner:
     def refine(
         self,
         volume: np.ndarray,
-        seed_mask: np.ndarray,
+        seed_mask: Optional[np.ndarray],
         plane: str,
         slice_index: int,
         box: Optional[Sequence[float]],
@@ -67,7 +67,11 @@ class MedSAM2Refiner:
     ) -> np.ndarray:
         if plane not in PLANE_TO_AXIS:
             raise ValueError(f"Unknown plane {plane!r}")
-        if volume.shape != seed_mask.shape or volume.ndim != 3:
+        if volume.ndim != 3:
+            raise ValueError("volume must be a 3D array")
+        if seed_mask is None:
+            seed_mask = np.zeros_like(volume, dtype=np.float32)
+        if volume.shape != seed_mask.shape:
             raise ValueError("volume and seed_mask must be matching 3D arrays")
         if not box and not points:
             raise ValueError("Add a box or at least one foreground/background point")

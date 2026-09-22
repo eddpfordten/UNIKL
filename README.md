@@ -18,13 +18,13 @@ Ideas we want to grow into the A.I. Copilot next.
 
 ## MedSAM2 refinement
 
-The desktop viewer supports user-reviewed MedSAM2 refinement after its 3D U-Net segmentation. On Windows, install the pinned official model and CUDA dependencies with Python 3.12:
+The desktop viewer exposes the 3D U-Net and MedSAM2 as two independent segmentation models. On Windows, install the pinned official MedSAM2 model and CUDA dependencies with Python 3.12:
 
 ```powershell
 & ".\Abuya Code\setup_medsam2.ps1"
 ```
 
-After running the U-Net, select **Refine** on any 2D panel. Left-click adds a foreground point, right-click adds a background point, and left-drag draws a box. **Preview** runs MedSAM2; **Accept** updates the measurements and 3D views and writes a native-space NIfTI mask under `Abuya Code/outputs/refined_masks`.
+After loading a BraTS folder, MedSAM2 can be used immediately without running the U-Net. Select **Refine** on any 2D panel: left-click adds a foreground point, right-click adds a background point, and left-drag draws a box. **Preview** runs MedSAM2; **Accept** updates the measurements and 3D views and writes a native-space NIfTI mask under `Abuya Code/outputs/refined_masks`. The brain icon remains available when you want to run the separate 3D U-Net model.
 
 ## To fix
 

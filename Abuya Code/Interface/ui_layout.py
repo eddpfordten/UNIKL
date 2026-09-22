@@ -1655,6 +1655,15 @@ class SlicePanel(HivePanel):
         self.color_map = None
         self._draw_slice(self.slider.value())
 
+    def clear_detection(self):
+        """Remove segmentation overlays while keeping the loaded MRI volume."""
+        self.mask = None
+        self.probs = None
+        self.labels = None
+        self.color_map = None
+        if self.volume is not None:
+            self._draw_slice(self.slider.value())
+
     def set_refined_detection(self, mask: np.ndarray, labels: np.ndarray, color_map: dict):
         """Show an accepted/previewed SAM mask with solid component colors."""
         if self.volume is not None and mask.shape != self.volume.shape:
@@ -1701,7 +1710,7 @@ class SlicePanel(HivePanel):
         elif self._sam_enabled:
             status, color = "READY", ACCENT_AMBER_SOFT
         else:
-            status, color = "RUN STEP 1", TEXT_MUTED
+            status, color = "LOAD MRI", TEXT_MUTED
         self.sam_status.setText(status)
         self.sam_status.setStyleSheet(
             f"color: {color}; background: #202024; border: none; border-radius: 7px; "
@@ -2145,7 +2154,7 @@ class Panel3D(HivePanel):
         )
         view_stack.addWidget(self.web_view)
 
-        self.placeholder_label = QLabel("(run segmentation to render)")
+        self.placeholder_label = QLabel("(run segmentation or SAM to render)")
         self.placeholder_label.setAlignment(Qt.AlignCenter)
         self.placeholder_label.setStyleSheet(
             f"border: none; color: {TEXT_MUTED}; font-size: 12px; background: {BG_PANEL};"
@@ -2179,6 +2188,15 @@ class Panel3D(HivePanel):
         self._temp_files.append(tmp.name)
         self.web_view.load(QUrl.fromLocalFile(tmp.name))
         QTimer.singleShot(0, self._sync_hive_overlay)
+
+    def clear_figure(self):
+        """Restore the empty state when there is no tumor mask to render."""
+        self.web_view.setHtml(
+            f"<html><body style='margin:0;background:{BG_PANEL};'></body></html>"
+        )
+        self.placeholder_label.show()
+        self.placeholder_label.raise_()
+        self._sync_hive_overlay()
 
     def set_maximized(self, is_max: bool):
         self.maximize_btn.setText("🗗" if is_max else "⛶")
@@ -2656,6 +2674,9 @@ class MainWindow(QMainWindow):
 
     def _show_committed_mask(self):
         if self._committed_mask is None:
+            for panel in self.center_panels:
+                panel.clear_detection()
+            self.patients_record_panel.set_volume(None)
             return
         if self._committed_probs is not None:
             voxel_vol_cm3 = self._voxel_volume_cm3(self._display_affine)
@@ -2669,10 +2690,10 @@ class MainWindow(QMainWindow):
             self._show_binary_mask(self._committed_mask)
 
     def on_run_sam_refinement(self, prompt: dict):
-        if self._busy or self._display_volume is None or self._committed_mask is None:
+        if self._busy or self._display_volume is None:
             return
         volume = self._display_volume.copy()
-        seed = self._committed_mask.copy()
+        seed = self._committed_mask.copy() if self._committed_mask is not None else None
         self.busy_bar.show()
         self._set_sam_busy(True)
         self._set_2d_loading(True)
@@ -2755,6 +2776,8 @@ class MainWindow(QMainWindow):
             has_tumor = mask_3d is not None and float(np.asarray(mask_3d).sum()) > 0
             if has_tumor:
                 self.tumor_3d_panel.set_figure(build_tumor_figure(mask_3d, spacing))
+            else:
+                self.tumor_3d_panel.clear_figure()
             self.brain_3d_panel.set_figure(build_brain_figure(volume_3d, mask_3d, spacing))
         except Exception as exc:
             QMessageBox.warning(self, "3D render failed", str(exc))
@@ -2939,14 +2962,16 @@ class MainWindow(QMainWindow):
         return True
 
     def _on_preview_ready(self, result):
-        volume, affine = result
+        volume, affine, transform = result
         self.sagittal_panel.set_volume(volume)
         self.axial_panel.set_volume(volume)
         self.coronal_panel.set_volume(volume)
         self._display_volume = volume
         self._display_affine = affine
+        self._volume_transform = transform
         self._set_2d_loading(False)
         self.run_seg_btn.setEnabled(True)
+        self._set_sam_available(True)
         self._busy = False
 
     def _on_preview_failed(self, message: str):
@@ -2960,7 +2985,8 @@ class MainWindow(QMainWindow):
         """
         Loads a NIfTI file and returns a normalized 3D numpy array ready for
         display (values roughly 0-1, resampled to STANDARD_DISPLAY_SHAPE)
-        plus a matching affine for 3D voxel spacing.
+        plus a matching affine and native-space transform. The transform lets
+        MedSAM2 export a mask even when the U-Net has not been run.
         """
         img = nib.load(path)
         data = img.get_fdata()
@@ -2976,7 +3002,9 @@ class MainWindow(QMainWindow):
         d_min, d_max = float(data.min()), float(data.max())
         if d_max > d_min:
             data = (data - d_min) / (d_max - d_min)
-        return _standardize_volume(data, img.affine)
+        volume, affine = _standardize_volume(data, img.affine)
+        transform = VolumeTransform.from_image(img, STANDARD_DISPLAY_SHAPE)
+        return volume, affine, transform
 
 
 def _pin_windows_app_id():
