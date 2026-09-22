@@ -1367,6 +1367,7 @@ class SlicePanel(HivePanel):
         self._sam_box = None    # (x0, y0, x1, y1) in the unrotated slice
         self._drag_start = None
         self._sam_prompt_slice = None
+        self._resize_redraw_pending = False
 
         self.setFrameShape(QFrame.Box)
         # Pure black background (not the charcoal BG_PANEL used elsewhere)
@@ -1992,6 +1993,32 @@ class SlicePanel(HivePanel):
         self.maximize_btn.setToolTip("Restore" if is_max else "Maximize")
         self._sync_hive_overlay()
 
+    def refresh_after_layout_change(self):
+        """Redraw the slice after Qt has applied the panel's new geometry.
+
+        An idle Matplotlib repaint can remain pending when the other dashboard
+        columns are hidden. A later mouse event then flushes that paint, which
+        makes the slice appear to expand only after the cursor is moved.
+        """
+        self.updateGeometry()
+        self.canvas.updateGeometry()
+        if self.volume is not None:
+            self._draw_slice(self.slider.value())
+        else:
+            self.canvas.draw()
+
+    def resizeEvent(self, event):
+        """Re-render the current slice when this panel changes dimensions."""
+        super().resizeEvent(event)
+        if not hasattr(self, "canvas") or self._resize_redraw_pending:
+            return
+        self._resize_redraw_pending = True
+        QTimer.singleShot(0, self._redraw_after_resize)
+
+    def _redraw_after_resize(self):
+        self._resize_redraw_pending = False
+        self.refresh_after_layout_change()
+
 
 def _inject_dark_page_style(html_path: str):
     """
@@ -2480,6 +2507,8 @@ class MainWindow(QMainWindow):
                 p.show()
             panel.set_maximized(False)
             self._maximized_panel = None
+            if isinstance(panel, SlicePanel):
+                QTimer.singleShot(0, panel.refresh_after_layout_change)
             return
 
         if self._maximized_panel is not None:
@@ -2501,6 +2530,8 @@ class MainWindow(QMainWindow):
 
         panel.set_maximized(True)
         self._maximized_panel = panel
+        if isinstance(panel, SlicePanel):
+            QTimer.singleShot(0, panel.refresh_after_layout_change)
 
     def _start_background(self, fn, on_ok, on_err) -> bool:
         if self._busy or (self._worker_thread is not None and self._worker_thread.isRunning()):
