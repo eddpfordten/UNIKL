@@ -1366,6 +1366,7 @@ class SlicePanel(HivePanel):
         self._sam_points = []   # [(x, y, label)] in the unrotated slice
         self._sam_box = None    # (x0, y0, x1, y1) in the unrotated slice
         self._drag_start = None
+        self._sam_prompt_slice = None
 
         self.setFrameShape(QFrame.Box)
         # Pure black background (not the charcoal BG_PANEL used elsewhere)
@@ -1734,6 +1735,7 @@ class SlicePanel(HivePanel):
         self._sam_points = []
         self._sam_box = None
         self._drag_start = None
+        self._sam_prompt_slice = None
         self._sync_sam_controls()
         if self.volume is not None:
             self._draw_slice(self.slider.value())
@@ -1759,6 +1761,10 @@ class SlicePanel(HivePanel):
         xy = self._event_to_prompt_xy(event)
         if xy is None:
             return
+        current_slice = self.slider.value()
+        if self._sam_prompt_slice is not None and self._sam_prompt_slice != current_slice:
+            self.clear_sam_prompts()
+        self._sam_prompt_slice = current_slice
         if event.button == 1:
             self._drag_start = xy
         elif event.button == 3:
@@ -1774,7 +1780,10 @@ class SlicePanel(HivePanel):
         self._drag_start = None
         if end is None:
             return
-        if abs(end[0] - start[0]) >= 2 or abs(end[1] - start[1]) >= 2:
+        # A small amount of movement is normal during a click. Requiring a
+        # larger drag prevents an intended foreground point becoming a tiny,
+        # misleading box prompt.
+        if abs(end[0] - start[0]) >= 5 or abs(end[1] - start[1]) >= 5:
             self._sam_box = (
                 min(start[0], end[0]), min(start[1], end[1]),
                 max(start[0], end[0]), max(start[1], end[1]),
@@ -1786,6 +1795,9 @@ class SlicePanel(HivePanel):
 
     def _request_sam_refinement(self):
         if self._sam_box is None and not self._sam_points:
+            return
+        if self._sam_prompt_slice != self.slider.value():
+            self.clear_sam_prompts()
             return
         self.refinement_requested.emit({
             "plane": self.plane,
@@ -1820,6 +1832,10 @@ class SlicePanel(HivePanel):
         self._draw_slice(self.slider.value())
 
     def _on_slider_changed(self, index: int):
+        # Points and boxes are 2D prompts and are valid only on the slice on
+        # which they were drawn. Never silently reuse them on another slice.
+        if self._sam_prompt_slice is not None and self._sam_prompt_slice != index:
+            self.clear_sam_prompts()
         self._draw_slice(index)
 
     def _slice_along_axis(self, array: np.ndarray, index: int) -> np.ndarray:
@@ -1915,30 +1931,31 @@ class SlicePanel(HivePanel):
         shown = np.rot90(rgb)
         self.ax.clear()
         self.ax.imshow(shown, aspect="equal", interpolation="bilinear")
-        self._draw_sam_prompts(rgb.shape[0])
+        self._draw_sam_prompts(rgb.shape[1])
         self.ax.set_aspect("equal", adjustable="datalim")
-        self._apply_brain_zoom(shown.shape[0], shown.shape[1], rgb.shape[0])
+        self._apply_brain_zoom(shown.shape[0], shown.shape[1], rgb.shape[1])
         self.ax.axis("off")
         self.canvas.draw_idle()
 
         self.title_label.setText(f"{self._base_title}  (SLICE {index})")
         self._sync_hive_overlay()
 
-    def _draw_sam_prompts(self, pre_rot_rows: int):
+    def _draw_sam_prompts(self, pre_rot_cols: int):
         for x, y, label in self._sam_points:
-            shown_x, shown_y = prompt_to_rotated_xy(x, y, pre_rot_rows)
+            shown_x, shown_y = prompt_to_rotated_xy(x, y, pre_rot_cols)
             color = "#30d158" if label == 1 else "#ff3b30"
             marker = "+" if label == 1 else "x"
             self.ax.plot(shown_x, shown_y, marker=marker, color=color, markersize=9, markeredgewidth=2)
         if self._sam_box is not None:
             x0, y0, x1, y1 = self._sam_box
-            shown_x0, shown_x1 = pre_rot_rows - 1 - y1, pre_rot_rows - 1 - y0
+            shown_x0, shown_x1 = y0, y1
+            shown_y0, shown_y1 = pre_rot_cols - 1 - x1, pre_rot_cols - 1 - x0
             self.ax.add_patch(Rectangle(
-                (shown_x0, x0), shown_x1 - shown_x0, x1 - x0,
+                (shown_x0, shown_y0), shown_x1 - shown_x0, shown_y1 - shown_y0,
                 fill=False, edgecolor=ACCENT_AMBER_SOFT, linewidth=1.8,
             ))
 
-    def _apply_brain_zoom(self, shown_h: int, shown_w: int, pre_rot_rows: int):
+    def _apply_brain_zoom(self, shown_h: int, shown_w: int, pre_rot_cols: int):
         """
         Crop the view to the brain bounding box after rot90 so the head
         fills more of the panel without changing voxel aspect ratio.
@@ -1955,9 +1972,10 @@ class SlicePanel(HivePanel):
         else:
             r0, r1 = lo[0], hi[0]
             c0, c1 = lo[1], hi[1]
-        # rot90: (r, c) -> new row = c, new col = (pre_rot_rows - 1 - r)
-        xs = [pre_rot_rows - 1 - r0, pre_rot_rows - 1 - r1]
-        ys = [c0, c1]
+        # np.rot90: source (row, col) -> displayed
+        # (x=row, y=pre_rot_cols-1-col).
+        xs = [r0, r1]
+        ys = [pre_rot_cols - 1 - c0, pre_rot_cols - 1 - c1]
         x0, x1 = min(xs) - 0.5, max(xs) + 0.5
         y0, y1 = min(ys) - 0.5, max(ys) + 0.5
         self.ax.set_xlim(max(-0.5, x0), min(shown_w - 0.5, x1))

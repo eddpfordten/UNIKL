@@ -44,6 +44,18 @@ class MedSAM2Refiner:
 
     @staticmethod
     def _frames(volume: np.ndarray, plane: str) -> torch.Tensor:
+        volume = np.asarray(volume, dtype=np.float32)
+        nonzero = volume[volume != 0]
+        if nonzero.size:
+            low, high = np.percentile(nonzero, (0.5, 99.5))
+            if high > low:
+                volume = np.clip(volume, low, high)
+                volume = (volume - low) / (high - low)
+                volume[volume < 0] = 0
+            else:
+                volume = np.zeros_like(volume)
+        else:
+            volume = np.zeros_like(volume)
         frames = volume_as_frames(np.clip(volume, 0.0, 1.0), plane)
         converted = []
         for frame in frames:
@@ -76,45 +88,46 @@ class MedSAM2Refiner:
         if not box and not points:
             raise ValueError("Add a box or at least one foreground/background point")
         frames = volume_as_frames(volume, plane)
-        seeds = volume_as_frames(seed_mask, plane)
         if not 0 <= slice_index < len(frames):
             raise ValueError(f"slice index {slice_index} is outside {plane} volume")
 
         predictor = self._load()
         images = self._frames(volume, plane)
         height, width = frames.shape[1:]
-        state = None
         result = np.zeros(frames.shape, dtype=np.uint8)
         autocast = torch.autocast("cuda", dtype=torch.bfloat16) if torch.cuda.is_bf16_supported() else nullcontext()
         try:
             with torch.inference_mode(), autocast:
-                state = predictor.init_state(
-                    images, height, width, offload_video_to_cpu=True, offload_state_to_cpu=True
-                )
-                if np.any(seeds[slice_index]):
-                    predictor.add_new_mask(state, slice_index, 1, seeds[slice_index] > 0)
-                predictor.add_new_points_or_box(
-                    inference_state=state,
-                    frame_idx=slice_index,
-                    obj_id=1,
-                    points=np.asarray(points, dtype=np.float32) if points else None,
-                    labels=np.asarray(point_labels, dtype=np.int32) if points else None,
-                    box=np.asarray(box, dtype=np.float32) if box else None,
-                    clear_old_points=True,
-                )
+                # Point/box input replaces a mask prompt on the same frame in
+                # SAM2, so do not submit seed_mask immediately before it. The
+                # manual prompt is the single source of truth for this run.
                 for reverse in (False, True):
-                    for frame_index, _object_ids, logits in predictor.propagate_in_video(
-                        state, reverse=reverse
-                    ):
-                        result[frame_index] = (logits[0, 0] > 0).detach().cpu().numpy()
+                    state = predictor.init_state(
+                        images, height, width, offload_video_to_cpu=True, offload_state_to_cpu=True
+                    )
+                    try:
+                        predictor.add_new_points_or_box(
+                            inference_state=state,
+                            frame_idx=slice_index,
+                            obj_id=1,
+                            points=np.asarray(points, dtype=np.float32) if points else None,
+                            labels=np.asarray(point_labels, dtype=np.int32) if points else None,
+                            box=np.asarray(box, dtype=np.float32) if box else None,
+                            clear_old_points=True,
+                        )
+                        for frame_index, _object_ids, logits in predictor.propagate_in_video(
+                            state, reverse=reverse
+                        ):
+                            predicted = (logits[0, 0] > 0).detach().cpu().numpy()
+                            result[frame_index] |= predicted.astype(np.uint8)
+                    finally:
+                        predictor.reset_state(state)
         except torch.cuda.OutOfMemoryError as exc:
             torch.cuda.empty_cache()
             raise RuntimeError(
                 "MedSAM2 ran out of GPU memory. Close other GPU applications and try again."
             ) from exc
         finally:
-            if state is not None:
-                predictor.reset_state(state)
             del images
             torch.cuda.empty_cache()
         return frames_as_volume(result, plane).astype(np.float32)

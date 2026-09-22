@@ -25,14 +25,17 @@ def frames_as_volume(frames: np.ndarray, plane: str) -> np.ndarray:
 
 def rotated_to_prompt_xy(shown_x: float, shown_y: float, rows: int, cols: int):
     """Undo ``np.rot90`` and return SAM coordinates (x=column, y=row)."""
-    row = float(np.clip(rows - 1 - shown_x, 0, rows - 1))
-    col = float(np.clip(shown_y, 0, cols - 1))
+    # np.rot90 maps source (row, col) to displayed
+    # (row'=cols-1-col, col'=row). Matplotlib coordinates are
+    # (x=col', y=row'), so source row=x and source col=cols-1-y.
+    row = float(np.clip(shown_x, 0, rows - 1))
+    col = float(np.clip(cols - 1 - shown_y, 0, cols - 1))
     return col, row
 
 
-def prompt_to_rotated_xy(x: float, y: float, rows: int):
+def prompt_to_rotated_xy(x: float, y: float, cols: int):
     """Map SAM slice coordinates onto the rotated Matplotlib display."""
-    return float(rows - 1 - y), float(x)
+    return float(y), float(cols - 1 - x)
 
 
 def _resize_exact(array: np.ndarray, shape: Tuple[int, int, int], order: int) -> np.ndarray:

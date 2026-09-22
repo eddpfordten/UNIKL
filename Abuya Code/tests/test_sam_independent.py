@@ -11,9 +11,13 @@ from brain_tumor_seg.sam.medsam2 import MedSAM2Refiner
 class _PromptOnlyPredictor:
     def __init__(self):
         self.mask_prompt_calls = 0
+        self.init_calls = 0
+        self.reset_calls = 0
+        self.directions = []
 
     def init_state(self, _images, height, width, **_kwargs):
-        return {"height": height, "width": width}
+        self.init_calls += 1
+        return {"height": height, "width": width, "run": self.init_calls}
 
     def add_new_mask(self, *_args, **_kwargs):
         self.mask_prompt_calls += 1
@@ -22,11 +26,13 @@ class _PromptOnlyPredictor:
         return None
 
     def propagate_in_video(self, state, reverse=False):
+        self.directions.append((state["run"], reverse))
         logits = torch.full((1, 1, state["height"], state["width"]), -1.0)
         logits[0, 0, 2:6, 2:6] = 1.0
         yield 1, [1], logits
 
     def reset_state(self, _state):
+        self.reset_calls += 1
         return None
 
 
@@ -52,6 +58,9 @@ class IndependentSamTests(unittest.TestCase):
         self.assertEqual(result.shape, volume.shape)
         self.assertGreater(result.sum(), 0)
         self.assertEqual(predictor.mask_prompt_calls, 0)
+        self.assertEqual(predictor.init_calls, 2)
+        self.assertEqual(predictor.reset_calls, 2)
+        self.assertEqual(predictor.directions, [(1, False), (2, True)])
 
 
 if __name__ == "__main__":

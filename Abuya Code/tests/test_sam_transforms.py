@@ -56,9 +56,24 @@ class VolumeTransformTests(unittest.TestCase):
     def test_rotated_prompt_coordinates_round_trip_at_corners(self):
         rows, cols = 20, 30
         for x, y in ((0, 0), (cols - 1, 0), (0, rows - 1), (cols - 1, rows - 1)):
-            shown_x, shown_y = prompt_to_rotated_xy(x, y, rows)
+            shown_x, shown_y = prompt_to_rotated_xy(x, y, cols)
             actual_x, actual_y = rotated_to_prompt_xy(shown_x, shown_y, rows, cols)
             self.assertEqual((actual_x, actual_y), (float(x), float(y)))
+
+    def test_prompt_transform_matches_np_rot90_pixel_location(self):
+        rows, cols = 4, 7
+        source = np.zeros((rows, cols), dtype=np.uint8)
+        for x, y in ((0, 0), (5, 1), (2, 3), (cols - 1, rows - 1)):
+            source.fill(0)
+            source[y, x] = 1
+            shown = np.rot90(source)
+            shown_y, shown_x = np.argwhere(shown == 1)[0]
+            mapped_x, mapped_y = prompt_to_rotated_xy(x, y, cols)
+            self.assertEqual((mapped_x, mapped_y), (float(shown_x), float(shown_y)))
+            self.assertEqual(
+                rotated_to_prompt_xy(mapped_x, mapped_y, rows, cols),
+                (float(x), float(y)),
+            )
 
     def test_all_anatomical_planes_round_trip(self):
         volume = np.arange(3 * 4 * 5).reshape(3, 4, 5)
