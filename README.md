@@ -24,7 +24,14 @@ The desktop viewer supports user-reviewed MedSAM2 refinement after its 3D U-Net 
 & ".\Abuya Code\setup_medsam2.ps1"
 ```
 
-After running the U-Net, select **Refine** on any 2D panel. Left-click adds a foreground point, right-click adds a background point, and left-drag draws a box. **Preview** runs MedSAM2; **Accept** updates the measurements and 3D views and writes a native-space NIfTI mask under `Abuya Code/outputs/refined_masks`.
+After running the U-Net, select **Refine** on any 2D panel and click one highlighted tumor. The viewer selects that Step 1 component, automatically builds a box on its largest slice, and runs MedSAM2 in both directions. **Accept** updates the measurements and 3D views and writes only the selected tumor as a native-space NIfTI mask under `Abuya Code/outputs/refined_masks`.
+
+To evaluate held-out selected-tumor masks, place matching NIfTI filenames in ground-truth, Step 1, and refined directories, then run:
+
+```powershell
+Set-Location ".\Abuya Code"
+python -m brain_tumor_seg.sam.benchmark --ground-truth-dir <ground-truth> --step1-dir <step1> --refined-dir <refined> --output benchmark.json
+```
 
 ## To fix
 
