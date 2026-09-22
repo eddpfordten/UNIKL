@@ -64,15 +64,20 @@ import nibabel as nib
 import torch
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
 from scipy.ndimage import zoom, label as ndi_label, center_of_mass as ndi_center_of_mass
 import plotly.graph_objects as go
 
-from brain_tumor_seg.config import CHECKPOINT_DIR, MODALITIES, TARGET_SHAPE
+from brain_tumor_seg.config import (
+    CHECKPOINT_DIR, MEDSAM2_CHECKPOINT, MODALITIES, REFINED_MASK_DIR, TARGET_SHAPE,
+)
 from brain_tumor_seg.data.dataset import _normalize
 from brain_tumor_seg.data.survival import load_survival_days, load_survival_stats
 from brain_tumor_seg.evaluation import predict_survival_days
 from brain_tumor_seg.models import MultiTaskUNet3D
 from brain_tumor_seg.models.multitask import run_model, split_model_outputs
+from brain_tumor_seg.sam import MedSAM2Refiner, VolumeTransform
+from brain_tumor_seg.sam.transforms import prompt_to_rotated_xy, rotated_to_prompt_xy
 from brain_tumor_seg.visualization.survival import format_survival
 from brain_tumor_seg.visualization.viewer3d import INTERACTION_CONFIG, show_volume_3d, brain_surface_level
 
@@ -264,11 +269,9 @@ MODEL_PATH = _resolve_checkpoint()
 INFERENCE_SIZE = TARGET_SHAPE
 # 3D marching cubes on a native 240^3 volume stalls the UI; downsample first.
 RENDER_MAX_DIM = 96
-# Square display grid. Native BraTS volumes are often 240x240x155 — stretching
-# that directly to a cube distorts sagittal/coronal views. Pad to a cube first,
-# then resize with one scale so slices stay square and the tumor mask maps back
-# onto the same grid the 2D views show.
-STANDARD_DISPLAY_SHAPE = (128, 128, 128)
+# Fixed inference/display grid. Direct resizing is intentional because it
+# matches the preprocessing used to train the U-Net.
+STANDARD_DISPLAY_SHAPE = (128, 128, 128)  # Direct resize, matching training preprocessing.
 
 # Embedded default for the folder picker (BraTS-PEDs training cases).
 EMBEDDED_TRAINING_DIR = Path(
@@ -289,22 +292,6 @@ def _default_browse_dir() -> str:
     return str(Path.home())
 
 
-def _cube_pads(shape) -> list:
-    size = max(int(s) for s in shape)
-    pads = []
-    for s in shape:
-        extra = size - int(s)
-        before = extra // 2
-        pads.append((before, extra - before))
-    return pads
-
-
-def _apply_pads(volume: np.ndarray, pads) -> np.ndarray:
-    if all(before == 0 and after == 0 for before, after in pads):
-        return volume
-    return np.pad(volume, pads, mode="constant")
-
-
 def _resize_exact(volume: np.ndarray, target_shape: tuple, order: int = 1) -> np.ndarray:
     target = tuple(int(s) for s in target_shape)
     if volume.shape == target:
@@ -321,33 +308,16 @@ def _resize_exact(volume: np.ndarray, target_shape: tuple, order: int = 1) -> np
 
 def _standardize_volume(volume: np.ndarray, affine: np.ndarray, order: int = 1):
     """
-    Resamples `volume` to STANDARD_DISPLAY_SHAPE and returns a matching
-    diagonal affine reflecting the new (larger or smaller) voxel spacing,
-    so downstream physical measurements remain correct after resizing.
+    Resample to STANDARD_DISPLAY_SHAPE exactly as the training dataset does.
 
-    This intentionally matches the preprocessing used by the accurate main
-    branch: do not cube-pad the input before model inference, because the
-    training dataset directly resizes the native scan to TARGET_SHAPE.
+    The returned affine reflects the resized voxel spacing, keeping volume and
+    3D measurements correct on the display grid.
     """
     native_spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0))
-    old_shape = np.array(volume.shape, dtype=np.float64)
-    new_shape = np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64)
-    zoom_factors = new_shape / old_shape
-
-    resampled = zoom(volume, zoom_factors, order=order)
-    if resampled.shape != STANDARD_DISPLAY_SHAPE:
-        slices = tuple(
-            slice(0, min(s, t))
-            for s, t in zip(resampled.shape, STANDARD_DISPLAY_SHAPE)
-        )
-        cropped = resampled[slices]
-        pad_widths = [
-            (0, t - c)
-            for c, t in zip(cropped.shape, STANDARD_DISPLAY_SHAPE)
-        ]
-        resampled = np.pad(cropped, pad_widths, mode="constant")
-
-    new_spacing = native_spacing * (old_shape / new_shape)
+    native_shape = np.array(volume.shape, dtype=np.float64)
+    display_shape = np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64)
+    resampled = _resize_exact(volume, STANDARD_DISPLAY_SHAPE, order=order)
+    new_spacing = native_spacing * (native_shape / display_shape)
     new_affine = np.eye(4)
     new_affine[0, 0] = new_spacing[0]
     new_affine[1, 1] = new_spacing[1]
@@ -392,7 +362,7 @@ def _ensure_model():
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Checkpoint not found: {MODEL_PATH}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    state_dict = torch.load(MODEL_PATH, map_location=device)
+    state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
     model = MultiTaskUNet3D(in_channels=4, out_channels=1)
     try:
         model.load_state_dict(state_dict)
@@ -1376,6 +1346,10 @@ class SlicePanel(HivePanel):
         0 -> sagittal, 1 -> coronal, 2 -> axial
     """
 
+    refinement_requested = Signal(object)
+    accept_requested = Signal()
+    discard_requested = Signal()
+
     def __init__(self, title: str, axis: int, min_height: int = 200):
         super().__init__()
         self.axis = axis
@@ -1385,6 +1359,13 @@ class SlicePanel(HivePanel):
         self.labels = None      # optional int array, same shape: 0=background, 1..N=component id
         self.color_map = None   # optional {component_id: hex_color}, matching self.labels
         self._bbox = None       # inclusive (lo, hi) of brain tissue, for zoomed square crop
+        self._sam_enabled = False
+        self._sam_busy = False
+        self._sam_preview_available = False
+        self._sam_editing = False
+        self._sam_points = []   # [(x, y, label)] in the unrotated slice
+        self._sam_box = None    # (x0, y0, x1, y1) in the unrotated slice
+        self._drag_start = None
 
         self.setFrameShape(QFrame.Box)
         # Pure black background (not the charcoal BG_PANEL used elsewhere)
@@ -1428,6 +1409,8 @@ class SlicePanel(HivePanel):
         self.ax = self.figure.add_subplot(111)
         self.ax.set_facecolor("#000000")
         self.ax.axis("off")
+        self.canvas.mpl_connect("button_press_event", self._on_canvas_press)
+        self.canvas.mpl_connect("button_release_event", self._on_canvas_release)
 
         # Canvas + loading overlay share the same space via a stacked
         # layout, so the spinner appears directly on top of the slice
@@ -1499,6 +1482,120 @@ class SlicePanel(HivePanel):
         self.slider.valueChanged.connect(self._on_slider_changed)
         slider_layout.addWidget(self.slider)
         layout.addWidget(slider_wrap)
+
+        # MedSAM2 uses progressive disclosure: the normal scan view gets one
+        # clean action row, while prompt and review tools appear only when they
+        # are relevant. This avoids the cramped six-button strip used by the
+        # first integration and follows the amber card language of the app.
+        self.sam_controls = QWidget()
+        self.sam_controls.setObjectName("samControls")
+        self.sam_controls.setStyleSheet(
+            f"QWidget#samControls {{ background: #121216; border: 1px solid {BORDER_DIM}; "
+            "border-radius: 9px; }}"
+            "QWidget#samControls QLabel { border: none; background: transparent; }"
+        )
+        sam_layout = QVBoxLayout(self.sam_controls)
+        sam_layout.setContentsMargins(8, 6, 8, 7)
+        sam_layout.setSpacing(6)
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(6)
+        sam_title = QLabel("MEDSAM2")
+        sam_title.setStyleSheet(
+            f"color: {ACCENT_AMBER}; font-size: 9px; font-weight: 700; letter-spacing: 1.4px;"
+        )
+        self.sam_status = QLabel("LOCKED")
+        self.sam_status.setAlignment(Qt.AlignCenter)
+        self.sam_status.setStyleSheet(
+            f"color: {TEXT_MUTED}; background: #202024; border: none; border-radius: 7px; "
+            "padding: 2px 6px; font-size: 8px; font-weight: 700;"
+        )
+        header_row.addWidget(sam_title)
+        header_row.addWidget(self.sam_status)
+        header_row.addStretch(1)
+
+        secondary_style = (
+            f"QPushButton {{ color: {TEXT_MUTED}; background: transparent; border: 1px solid {BORDER_DIM}; "
+            "border-radius: 6px; padding: 4px 8px; font-size: 9px; font-weight: 600; }}"
+            f"QPushButton:hover {{ color: {TEXT_LIGHT}; border-color: {ACCENT_AMBER_DEEP}; "
+            "background: #2a2114; }}"
+            "QPushButton:disabled { color: #565159; border-color: #29272a; background: transparent; }"
+        )
+        primary_style = (
+            f"QPushButton {{ color: #17120a; background: {ACCENT_AMBER}; border: none; "
+            "border-radius: 6px; padding: 5px 10px; font-size: 9px; font-weight: 800; }}"
+            f"QPushButton:hover {{ background: {ACCENT_AMBER_SOFT}; }}"
+            "QPushButton:disabled { color: #77716a; background: #343036; }"
+        )
+        self.sam_refine_btn = QPushButton("REFINE")
+        self.sam_refine_btn.setCheckable(True)
+        self.sam_refine_btn.setEnabled(False)
+        self.sam_refine_btn.setCursor(Qt.PointingHandCursor)
+        self.sam_refine_btn.setStyleSheet(
+            secondary_style
+            + f"QPushButton:checked {{ color: {ACCENT_AMBER_SOFT}; border-color: {ACCENT_AMBER}; "
+            "background: #2a2114; }}"
+        )
+        header_row.addWidget(self.sam_refine_btn)
+        sam_layout.addLayout(header_row)
+
+        self.sam_editor = QWidget()
+        self.sam_editor.setStyleSheet("background: transparent; border: none;")
+        editor_layout = QVBoxLayout(self.sam_editor)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(5)
+        self.sam_prompt_summary = QLabel("FG LEFT  /  BG RIGHT  /  DRAG BOX")
+        self.sam_prompt_summary.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 8px; letter-spacing: .4px;"
+        )
+        self.sam_prompt_summary.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.sam_prompt_summary.setWordWrap(True)
+        editor_layout.addWidget(self.sam_prompt_summary)
+
+        tool_row = QHBoxLayout()
+        tool_row.setSpacing(5)
+        self.sam_undo_btn = QPushButton("Undo")
+        self.sam_clear_btn = QPushButton("Clear")
+        self.sam_run_btn = QPushButton("PREVIEW")
+        for button in (self.sam_undo_btn, self.sam_clear_btn):
+            button.setStyleSheet(secondary_style)
+            tool_row.addWidget(button)
+        tool_row.addStretch(1)
+        self.sam_run_btn.setStyleSheet(primary_style)
+        self.sam_run_btn.setCursor(Qt.PointingHandCursor)
+        tool_row.addWidget(self.sam_run_btn)
+        editor_layout.addLayout(tool_row)
+        sam_layout.addWidget(self.sam_editor)
+
+        self.sam_review = QWidget()
+        self.sam_review.setStyleSheet("background: transparent; border: none;")
+        review_row = QHBoxLayout(self.sam_review)
+        review_row.setContentsMargins(0, 0, 0, 0)
+        review_row.setSpacing(5)
+        review_label = QLabel("PREVIEW READY")
+        review_label.setStyleSheet(
+            f"color: {ACCENT_TEAL_SOFT}; font-size: 8px; font-weight: 700; letter-spacing: 1px;"
+        )
+        self.sam_discard_btn = QPushButton("DISCARD")
+        self.sam_accept_btn = QPushButton("ACCEPT")
+        self.sam_discard_btn.setStyleSheet(secondary_style)
+        self.sam_accept_btn.setStyleSheet(primary_style)
+        review_row.addWidget(review_label)
+        review_row.addStretch(1)
+        review_row.addWidget(self.sam_discard_btn)
+        review_row.addWidget(self.sam_accept_btn)
+        sam_layout.addWidget(self.sam_review)
+
+        self.sam_refine_btn.toggled.connect(self._set_sam_editing)
+        self.sam_undo_btn.clicked.connect(self._undo_sam_prompt)
+        self.sam_clear_btn.clicked.connect(self.clear_sam_prompts)
+        self.sam_run_btn.clicked.connect(self._request_sam_refinement)
+        self.sam_accept_btn.clicked.connect(self.accept_requested.emit)
+        self.sam_discard_btn.clicked.connect(self.discard_requested.emit)
+        self.sam_editor.hide()
+        self.sam_review.hide()
+        self.set_sam_preview_available(False)
+        layout.addWidget(self.sam_controls)
         self._show_hive_empty()
         self._sync_hive_overlay()
 
@@ -1531,6 +1628,8 @@ class SlicePanel(HivePanel):
         self.labels = None
         self.color_map = None
         self._bbox = _content_bbox(volume)
+        self.clear_sam_prompts()
+        self.enable_sam(False)
         n_slices = volume.shape[self.axis]
         self.slider.setEnabled(True)
         self.slider.setMinimum(0)
@@ -1555,6 +1654,137 @@ class SlicePanel(HivePanel):
         self.labels = None
         self.color_map = None
         self._draw_slice(self.slider.value())
+
+    def set_refined_detection(self, mask: np.ndarray, labels: np.ndarray, color_map: dict):
+        """Show an accepted/previewed SAM mask with solid component colors."""
+        if self.volume is not None and mask.shape != self.volume.shape:
+            raise ValueError(f"mask shape {mask.shape} does not match volume shape {self.volume.shape}")
+        self.mask = mask
+        self.probs = None
+        self.labels = labels
+        self.color_map = color_map
+        self._draw_slice(self.slider.value())
+
+    @property
+    def plane(self) -> str:
+        return {0: "sagittal", 1: "coronal", 2: "axial"}[self.axis]
+
+    def enable_sam(self, enabled: bool):
+        self._sam_enabled = bool(enabled)
+        if not enabled:
+            self.sam_refine_btn.setChecked(False)
+        self._sync_sam_controls()
+
+    def set_sam_busy(self, busy: bool):
+        self._sam_busy = bool(busy)
+        self._sync_sam_controls()
+
+    def set_sam_preview_available(self, available: bool):
+        self._sam_preview_available = bool(available)
+        self._sync_sam_controls()
+
+    def _sync_sam_controls(self):
+        ready = self._sam_enabled and not self._sam_busy
+        has_prompt = self._sam_box is not None or bool(self._sam_points)
+        self.sam_refine_btn.setEnabled(ready)
+        self.sam_undo_btn.setEnabled(ready and has_prompt)
+        self.sam_clear_btn.setEnabled(ready and has_prompt)
+        self.sam_run_btn.setEnabled(ready and has_prompt)
+        self.sam_accept_btn.setEnabled(ready and self._sam_preview_available)
+        self.sam_discard_btn.setEnabled(ready and self._sam_preview_available)
+        self.sam_review.setVisible(self._sam_preview_available)
+
+        if self._sam_busy:
+            status, color = "PROCESSING", ACCENT_TEAL_SOFT
+        elif self._sam_preview_available:
+            status, color = "REVIEW", ACCENT_TEAL_SOFT
+        elif self._sam_enabled:
+            status, color = "READY", ACCENT_AMBER_SOFT
+        else:
+            status, color = "RUN STEP 1", TEXT_MUTED
+        self.sam_status.setText(status)
+        self.sam_status.setStyleSheet(
+            f"color: {color}; background: #202024; border: none; border-radius: 7px; "
+            "padding: 2px 6px; font-size: 8px; font-weight: 700;"
+        )
+
+        count = len(self._sam_points) + int(self._sam_box is not None)
+        self.sam_prompt_summary.setText(
+            f"{count} PROMPT{'S' if count != 1 else ''}  ·  FG LEFT / BG RIGHT / DRAG BOX"
+            if count else "FG LEFT  /  BG RIGHT  /  DRAG BOX"
+        )
+
+    def _set_sam_editing(self, editing: bool):
+        self._sam_editing = editing and self._sam_enabled
+        self.canvas.setCursor(Qt.CrossCursor if self._sam_editing else Qt.ArrowCursor)
+        self.sam_editor.setVisible(self._sam_editing)
+        self.sam_refine_btn.setText("EDITING" if self._sam_editing else "REFINE")
+        self._sync_sam_controls()
+
+    def clear_sam_prompts(self):
+        self._sam_points = []
+        self._sam_box = None
+        self._drag_start = None
+        self._sync_sam_controls()
+        if self.volume is not None:
+            self._draw_slice(self.slider.value())
+
+    def _undo_sam_prompt(self):
+        if self._sam_points:
+            self._sam_points.pop()
+        elif self._sam_box is not None:
+            self._sam_box = None
+        self._sync_sam_controls()
+        self._draw_slice(self.slider.value())
+
+    def _event_to_prompt_xy(self, event):
+        if event.inaxes is not self.ax or event.xdata is None or event.ydata is None:
+            return None
+        current = self._slice_along_axis(self.volume, self.slider.value())
+        rows, cols = current.shape
+        return rotated_to_prompt_xy(event.xdata, event.ydata, rows, cols)
+
+    def _on_canvas_press(self, event):
+        if not self._sam_editing or self.volume is None:
+            return
+        xy = self._event_to_prompt_xy(event)
+        if xy is None:
+            return
+        if event.button == 1:
+            self._drag_start = xy
+        elif event.button == 3:
+            self._sam_points.append((xy[0], xy[1], 0))
+            self._sync_sam_controls()
+            self._draw_slice(self.slider.value())
+
+    def _on_canvas_release(self, event):
+        if not self._sam_editing or event.button != 1 or self._drag_start is None:
+            return
+        end = self._event_to_prompt_xy(event)
+        start = self._drag_start
+        self._drag_start = None
+        if end is None:
+            return
+        if abs(end[0] - start[0]) >= 2 or abs(end[1] - start[1]) >= 2:
+            self._sam_box = (
+                min(start[0], end[0]), min(start[1], end[1]),
+                max(start[0], end[0]), max(start[1], end[1]),
+            )
+        else:
+            self._sam_points.append((end[0], end[1], 1))
+        self._sync_sam_controls()
+        self._draw_slice(self.slider.value())
+
+    def _request_sam_refinement(self):
+        if self._sam_box is None and not self._sam_points:
+            return
+        self.refinement_requested.emit({
+            "plane": self.plane,
+            "slice_index": self.slider.value(),
+            "box": self._sam_box,
+            "points": [(x, y) for x, y, _label in self._sam_points],
+            "point_labels": [label for _x, _y, label in self._sam_points],
+        })
 
     def set_detection(self, probs: np.ndarray, labels: np.ndarray, color_map: dict):
         """
@@ -1659,13 +1889,24 @@ class SlicePanel(HivePanel):
         elif self.mask is not None:
             mask_slice = self._slice_along_axis(self.mask, index)
             hit = mask_slice > 0.5
-            rgb[hit, 0] = 1.0
-            rgb[hit, 1] = 0.15
-            rgb[hit, 2] = 0.15
+            if self.labels is not None and self.color_map:
+                label_slice = self._slice_along_axis(self.labels, index)
+                for label_id, hex_color in self.color_map.items():
+                    region = label_slice == label_id
+                    color = _hex_to_rgb01(hex_color)
+                    for channel in range(3):
+                        rgb[..., channel] = np.where(
+                            region, 0.2 * rgb[..., channel] + 0.8 * color[channel], rgb[..., channel]
+                        )
+            else:
+                rgb[hit, 0] = 1.0
+                rgb[hit, 1] = 0.15
+                rgb[hit, 2] = 0.15
 
         shown = np.rot90(rgb)
         self.ax.clear()
         self.ax.imshow(shown, aspect="equal", interpolation="bilinear")
+        self._draw_sam_prompts(rgb.shape[0])
         self.ax.set_aspect("equal", adjustable="datalim")
         self._apply_brain_zoom(shown.shape[0], shown.shape[1], rgb.shape[0])
         self.ax.axis("off")
@@ -1673,6 +1914,20 @@ class SlicePanel(HivePanel):
 
         self.title_label.setText(f"{self._base_title}  (SLICE {index})")
         self._sync_hive_overlay()
+
+    def _draw_sam_prompts(self, pre_rot_rows: int):
+        for x, y, label in self._sam_points:
+            shown_x, shown_y = prompt_to_rotated_xy(x, y, pre_rot_rows)
+            color = "#30d158" if label == 1 else "#ff3b30"
+            marker = "+" if label == 1 else "x"
+            self.ax.plot(shown_x, shown_y, marker=marker, color=color, markersize=9, markeredgewidth=2)
+        if self._sam_box is not None:
+            x0, y0, x1, y1 = self._sam_box
+            shown_x0, shown_x1 = pre_rot_rows - 1 - y1, pre_rot_rows - 1 - y0
+            self.ax.add_patch(Rectangle(
+                (shown_x0, x0), shown_x1 - shown_x0, x1 - x0,
+                fill=False, edgecolor=ACCENT_AMBER_SOFT, linewidth=1.8,
+            ))
 
     def _apply_brain_zoom(self, shown_h: int, shown_w: int, pre_rot_rows: int):
         """
@@ -2031,6 +2286,11 @@ class MainWindow(QMainWindow):
         self._nii_files: list = []
         self._display_volume: Optional[np.ndarray] = None
         self._display_affine: Optional[np.ndarray] = None
+        self._volume_transform: Optional[VolumeTransform] = None
+        self._committed_mask: Optional[np.ndarray] = None
+        self._committed_probs: Optional[np.ndarray] = None
+        self._preview_mask: Optional[np.ndarray] = None
+        self._sam_refiner = MedSAM2Refiner(MEDSAM2_CHECKPOINT)
         self._model = None
         self._device = None
         self._worker_thread: Optional[QThread] = None
@@ -2162,6 +2422,10 @@ class MainWindow(QMainWindow):
 
         for panel in self.all_panels:
             panel.maximize_btn.clicked.connect(lambda checked=False, p=panel: self.toggle_maximize(p))
+        for panel in self.center_panels:
+            panel.refinement_requested.connect(self.on_run_sam_refinement)
+            panel.accept_requested.connect(self.on_accept_sam_refinement)
+            panel.discard_requested.connect(self.on_discard_sam_refinement)
 
     def toggle_maximize(self, panel):
         """Clicking a panel's maximize button hides every other panel (and
@@ -2239,7 +2503,7 @@ class MainWindow(QMainWindow):
 
         def job():
             modality_paths = MainWindow._find_modality_files(folder_path)
-            display_volume, model_input, affine = MainWindow._load_and_stack(modality_paths)
+            display_volume, model_input, affine, transform = MainWindow._load_and_stack(modality_paths)
             model, device = _ensure_model()
             mask, probs, predicted_days = MainWindow._run_model_static(
                 model, device, model_input, display_volume.shape, survival_stats
@@ -2251,6 +2515,7 @@ class MainWindow(QMainWindow):
             return {
                 "display_volume": display_volume,
                 "affine": affine,
+                "transform": transform,
                 "mask": mask,
                 "probs": probs,
                 "predicted_days": predicted_days,
@@ -2281,6 +2546,11 @@ class MainWindow(QMainWindow):
         self.survival_panel.set_days(result["predicted_days"])
         self._display_volume = display_volume
         self._display_affine = affine
+        self._volume_transform = result["transform"]
+        self._committed_mask = mask.copy()
+        self._committed_probs = probs.copy()
+        self._preview_mask = None
+        self._set_sam_available(True)
 
         self.busy_bar.hide()
         self.run_seg_btn.setEnabled(True)
@@ -2313,7 +2583,7 @@ class MainWindow(QMainWindow):
         self._busy = False
         QMessageBox.critical(self, "Inference failed", message)
 
-    def _label_tumor_components(self, mask: np.ndarray, probs: np.ndarray, voxel_vol_cm3: float):
+    def _label_tumor_components(self, mask: np.ndarray, probs: Optional[np.ndarray], voxel_vol_cm3: float):
         """
         Splits the binary mask into separate connected components — a
         brain can have more than one lesion — and assigns each a distinct
@@ -2341,7 +2611,7 @@ class MainWindow(QMainWindow):
                 "label_id": label_id,
                 "voxels": voxels,
                 "volume_cm3": voxels * voxel_vol_cm3,
-                "confidence": float(probs[comp_mask].mean()),
+                "confidence": float(probs[comp_mask].mean()) if probs is not None else 1.0,
             })
 
         # Largest first, so "#1" consistently means the biggest lesion
@@ -2362,6 +2632,112 @@ class MainWindow(QMainWindow):
         """Shows/hides the spinner overlay on all three 2D panels at once."""
         for panel in self.center_panels:
             panel.set_loading(active)
+
+    def _set_sam_available(self, available: bool):
+        for panel in self.center_panels:
+            panel.enable_sam(available)
+
+    def _set_sam_busy(self, busy: bool):
+        self.drop_zone.setEnabled(not busy)
+        self.run_seg_btn.setEnabled(not busy and self.current_folder is not None)
+        for panel in self.center_panels:
+            panel.set_sam_busy(busy)
+
+    def _set_sam_preview_available(self, available: bool):
+        for panel in self.center_panels:
+            panel.set_sam_preview_available(available)
+
+    def _show_binary_mask(self, mask: np.ndarray):
+        voxel_vol_cm3 = self._voxel_volume_cm3(self._display_affine)
+        labels, _components, color_map = self._label_tumor_components(mask, None, voxel_vol_cm3)
+        for panel in self.center_panels:
+            panel.set_refined_detection(mask, labels, color_map)
+        self.patients_record_panel.set_volume(float(mask.sum()) * voxel_vol_cm3)
+
+    def _show_committed_mask(self):
+        if self._committed_mask is None:
+            return
+        if self._committed_probs is not None:
+            voxel_vol_cm3 = self._voxel_volume_cm3(self._display_affine)
+            labels, _components, color_map = self._label_tumor_components(
+                self._committed_mask, self._committed_probs, voxel_vol_cm3
+            )
+            for panel in self.center_panels:
+                panel.set_detection(self._committed_probs, labels, color_map)
+            self.patients_record_panel.set_volume(float(self._committed_mask.sum()) * voxel_vol_cm3)
+        else:
+            self._show_binary_mask(self._committed_mask)
+
+    def on_run_sam_refinement(self, prompt: dict):
+        if self._busy or self._display_volume is None or self._committed_mask is None:
+            return
+        volume = self._display_volume.copy()
+        seed = self._committed_mask.copy()
+        self.busy_bar.show()
+        self._set_sam_busy(True)
+        self._set_2d_loading(True)
+
+        def job():
+            mask = self._sam_refiner.refine(
+                volume=volume,
+                seed_mask=seed,
+                plane=prompt["plane"],
+                slice_index=prompt["slice_index"],
+                box=prompt["box"],
+                points=prompt["points"],
+                point_labels=prompt["point_labels"],
+            )
+            volume_3d, mask_3d, spacing = _prepare_3d(volume, mask, self._display_affine)
+            tumor_fig = build_tumor_figure(mask_3d, spacing) if np.any(mask_3d) else None
+            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing)
+            return {"mask": mask, "tumor_fig": tumor_fig, "brain_fig": brain_fig}
+
+        self._start_background(job, self._on_sam_refinement_ready, self._on_sam_refinement_failed)
+
+    def _on_sam_refinement_ready(self, result: dict):
+        self._preview_mask = result["mask"]
+        self._show_binary_mask(self._preview_mask)
+        self._set_2d_loading(False)
+        self._set_sam_busy(False)
+        self._set_sam_preview_available(True)
+        self.busy_bar.hide()
+        self._busy = False
+        self._pending_3d = (result.get("tumor_fig"), result.get("brain_fig"))
+        QTimer.singleShot(0, self._apply_pending_3d)
+
+    def _on_sam_refinement_failed(self, message: str):
+        self._set_2d_loading(False)
+        self._set_sam_busy(False)
+        self.busy_bar.hide()
+        self._busy = False
+        QMessageBox.critical(self, "MedSAM2 refinement failed", message)
+
+    def on_accept_sam_refinement(self):
+        if self._preview_mask is None or self._volume_transform is None or self.current_folder is None:
+            return
+        destination = REFINED_MASK_DIR / f"{self.current_folder.name}-sam2-refined.nii.gz"
+        try:
+            self._volume_transform.save_mask(self._preview_mask, destination)
+        except Exception as exc:
+            QMessageBox.critical(self, "Could not save refined mask", str(exc))
+            return
+        self._committed_mask = self._preview_mask.copy()
+        self._committed_probs = None
+        self._preview_mask = None
+        self._set_sam_preview_available(False)
+        for panel in self.center_panels:
+            panel.clear_sam_prompts()
+        self._show_committed_mask()
+        self._update_3d_views(self._display_volume, self._committed_mask, self._display_affine)
+        QMessageBox.information(self, "Refined mask saved", f"Saved to:\n{destination}")
+
+    def on_discard_sam_refinement(self):
+        if self._preview_mask is None:
+            return
+        self._preview_mask = None
+        self._set_sam_preview_available(False)
+        self._show_committed_mask()
+        self._update_3d_views(self._display_volume, self._committed_mask, self._display_affine)
 
     def _update_3d_views(
         self,
@@ -2436,11 +2812,13 @@ class MainWindow(QMainWindow):
         """
         arrays = {}
         affine = None
+        flair_image = None
         for key in MODALITIES:
             img = nib.load(str(paths[key]))
             data = img.get_fdata().astype(np.float32)
             if key == "t2f":
                 affine = img.affine
+                flair_image = img
             arrays[key] = data
 
         shape = arrays["t2f"].shape
@@ -2451,9 +2829,8 @@ class MainWindow(QMainWindow):
                     f"(all 4 modalities must be co-registered to the same grid)"
                 )
 
-        # Keep model preprocessing identical to training and the accurate
-        # main branch. The native volumes are normalized first and resized
-        # exactly once by _run_model_static to INFERENCE_SIZE/TARGET_SHAPE.
+        # Keep preprocessing identical to training: normalize each native
+        # modality and let _run_model_static resize once to TARGET_SHAPE.
         flair = arrays["t2f"]
         d_min, d_max = float(flair.min()), float(flair.max())
         display_volume = (flair - d_min) / (d_max - d_min) if d_max > d_min else flair
@@ -2462,7 +2839,8 @@ class MainWindow(QMainWindow):
         channels = [_normalize(arrays[key]) for key in MODALITIES]
         stacked = np.stack(channels, axis=0)  # [4, D, H, W]
         tensor = torch.from_numpy(stacked).unsqueeze(0).float()  # [1, 4, D, H, W]
-        return display_volume, tensor, affine
+        transform = VolumeTransform.from_image(flair_image, STANDARD_DISPLAY_SHAPE)
+        return display_volume, tensor, affine, transform
 
     def _get_model(self):
         model, device = _ensure_model()
@@ -2533,6 +2911,12 @@ class MainWindow(QMainWindow):
             case_id, self._survival_table.get(case_id)
         )
         self.survival_panel.set_days(None)
+        self._committed_mask = None
+        self._committed_probs = None
+        self._preview_mask = None
+        self._volume_transform = None
+        self._set_sam_available(False)
+        self._set_sam_preview_available(False)
         self.run_seg_btn.setEnabled(False)
 
         default_index = 0

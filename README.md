@@ -16,6 +16,16 @@ Ideas we want to grow into the A.I. Copilot next.
 - 💾 **Save after segment** — export the overlay, mask, and 3D snapshots once a run finishes.
 - 🧩 **Model picker** — choose which checkpoint / architecture to run before hitting segmentation.
 
+## MedSAM2 refinement
+
+The desktop viewer supports user-reviewed MedSAM2 refinement after its 3D U-Net segmentation. On Windows, install the pinned official model and CUDA dependencies with Python 3.12:
+
+```powershell
+& ".\Abuya Code\setup_medsam2.ps1"
+```
+
+After running the U-Net, select **Refine** on any 2D panel. Left-click adds a foreground point, right-click adds a background point, and left-drag draws a box. **Preview** runs MedSAM2; **Accept** updates the measurements and 3D views and writes a native-space NIfTI mask under `Abuya Code/outputs/refined_masks`.
+
 ## To fix
 
 Bugs and polish still sitting in the current viewer.

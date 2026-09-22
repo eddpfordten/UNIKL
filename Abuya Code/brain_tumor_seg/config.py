@@ -85,6 +85,9 @@ SURVIVAL_STATS_FILENAME = "survival_stats.json"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
 CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
 PLOT_DIR = OUTPUT_DIR / "plots"
+MEDSAM2_DIR = CHECKPOINT_DIR / "medsam2"
+MEDSAM2_CHECKPOINT = MEDSAM2_DIR / "MedSAM2_latest.pt"
+REFINED_MASK_DIR = OUTPUT_DIR / "refined_masks"
 
 # Random seed for reproducibility
 SEED = 42
