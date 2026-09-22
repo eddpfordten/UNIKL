@@ -321,15 +321,33 @@ def _resize_exact(volume: np.ndarray, target_shape: tuple, order: int = 1) -> np
 
 def _standardize_volume(volume: np.ndarray, affine: np.ndarray, order: int = 1):
     """
-    Pad to a cube (no stretch), then resize to STANDARD_DISPLAY_SHAPE.
-    Masks predicted at INFERENCE_SIZE are mapped back to this same grid.
+    Resamples `volume` to STANDARD_DISPLAY_SHAPE and returns a matching
+    diagonal affine reflecting the new (larger or smaller) voxel spacing,
+    so downstream physical measurements remain correct after resizing.
+
+    This intentionally matches the preprocessing used by the accurate main
+    branch: do not cube-pad the input before model inference, because the
+    training dataset directly resizes the native scan to TARGET_SHAPE.
     """
     native_spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0))
-    pads = _cube_pads(volume.shape)
-    padded = _apply_pads(volume, pads)
-    padded_shape = np.array(padded.shape, dtype=np.float64)
-    resampled = _resize_exact(padded, STANDARD_DISPLAY_SHAPE, order=order)
-    new_spacing = native_spacing * (padded_shape / np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64))
+    old_shape = np.array(volume.shape, dtype=np.float64)
+    new_shape = np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64)
+    zoom_factors = new_shape / old_shape
+
+    resampled = zoom(volume, zoom_factors, order=order)
+    if resampled.shape != STANDARD_DISPLAY_SHAPE:
+        slices = tuple(
+            slice(0, min(s, t))
+            for s, t in zip(resampled.shape, STANDARD_DISPLAY_SHAPE)
+        )
+        cropped = resampled[slices]
+        pad_widths = [
+            (0, t - c)
+            for c, t in zip(cropped.shape, STANDARD_DISPLAY_SHAPE)
+        ]
+        resampled = np.pad(cropped, pad_widths, mode="constant")
+
+    new_spacing = native_spacing * (old_shape / new_shape)
     new_affine = np.eye(4)
     new_affine[0, 0] = new_spacing[0]
     new_affine[1, 1] = new_spacing[1]
@@ -2433,30 +2451,15 @@ class MainWindow(QMainWindow):
                     f"(all 4 modalities must be co-registered to the same grid)"
                 )
 
-        # Pad every modality with the same centered cube-pad, then resize
-        # to the square display grid. The model is run at INFERENCE_SIZE
-        # and the mask is mapped back to this same grid.
-        pads = _cube_pads(arrays["t2f"].shape)
-        for key in MODALITIES:
-            arrays[key] = _apply_pads(arrays[key], pads)
-
+        # Keep model preprocessing identical to training and the accurate
+        # main branch. The native volumes are normalized first and resized
+        # exactly once by _run_model_static to INFERENCE_SIZE/TARGET_SHAPE.
         flair = arrays["t2f"]
         d_min, d_max = float(flair.min()), float(flair.max())
         display_volume = (flair - d_min) / (d_max - d_min) if d_max > d_min else flair
-        display_volume = _resize_exact(display_volume, STANDARD_DISPLAY_SHAPE, order=1)
+        display_volume, affine = _standardize_volume(display_volume, affine)
 
-        padded_shape = np.array(arrays["t2f"].shape, dtype=np.float64)
-        native_spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0))
-        new_spacing = native_spacing * (padded_shape / np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64))
-        affine = np.eye(4)
-        affine[0, 0] = new_spacing[0]
-        affine[1, 1] = new_spacing[1]
-        affine[2, 2] = new_spacing[2]
-
-        channels = [
-            _resize_exact(_normalize(arrays[key]), STANDARD_DISPLAY_SHAPE, order=1)
-            for key in MODALITIES
-        ]
+        channels = [_normalize(arrays[key]) for key in MODALITIES]
         stacked = np.stack(channels, axis=0)  # [4, D, H, W]
         tensor = torch.from_numpy(stacked).unsqueeze(0).float()  # [1, 4, D, H, W]
         return display_volume, tensor, affine
