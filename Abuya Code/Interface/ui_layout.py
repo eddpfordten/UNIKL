@@ -64,6 +64,7 @@ import nibabel as nib
 import torch
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
 from scipy.ndimage import zoom, label as ndi_label, center_of_mass as ndi_center_of_mass
 import plotly.graph_objects as go
 
@@ -75,8 +76,8 @@ from brain_tumor_seg.data.survival import load_survival_days, load_survival_stat
 from brain_tumor_seg.evaluation import predict_survival_days
 from brain_tumor_seg.models import MultiTaskUNet3D
 from brain_tumor_seg.models.multitask import run_model, split_model_outputs
-from brain_tumor_seg.sam import MedSAM2Refiner, VolumeTransform, select_component_at_click
-from brain_tumor_seg.sam.transforms import rotated_to_prompt_xy
+from brain_tumor_seg.sam import MedSAM2Refiner, VolumeTransform
+from brain_tumor_seg.sam.transforms import prompt_to_rotated_xy, rotated_to_prompt_xy
 from brain_tumor_seg.visualization.survival import format_survival
 from brain_tumor_seg.visualization.viewer3d import INTERACTION_CONFIG, show_volume_3d, brain_surface_level
 
@@ -1345,7 +1346,7 @@ class SlicePanel(HivePanel):
         0 -> sagittal, 1 -> coronal, 2 -> axial
     """
 
-    tumor_clicked = Signal(object)
+    refinement_requested = Signal(object)
     accept_requested = Signal()
     discard_requested = Signal()
 
@@ -1362,6 +1363,9 @@ class SlicePanel(HivePanel):
         self._sam_busy = False
         self._sam_preview_available = False
         self._sam_editing = False
+        self._sam_points = []   # [(x, y, label)] in the unrotated slice
+        self._sam_box = None    # (x0, y0, x1, y1) in the unrotated slice
+        self._drag_start = None
 
         self.setFrameShape(QFrame.Box)
         # Pure black background (not the charcoal BG_PANEL used elsewhere)
@@ -1406,6 +1410,7 @@ class SlicePanel(HivePanel):
         self.ax.set_facecolor("#000000")
         self.ax.axis("off")
         self.canvas.mpl_connect("button_press_event", self._on_canvas_press)
+        self.canvas.mpl_connect("button_release_event", self._on_canvas_release)
 
         # Canvas + loading overlay share the same space via a stacked
         # layout, so the spinner appears directly on top of the slice
@@ -1534,13 +1539,33 @@ class SlicePanel(HivePanel):
         header_row.addWidget(self.sam_refine_btn)
         sam_layout.addLayout(header_row)
 
-        self.sam_hint = QLabel("CLICK ONE HIGHLIGHTED TUMOR")
-        self.sam_hint.setStyleSheet(
+        self.sam_editor = QWidget()
+        self.sam_editor.setStyleSheet("background: transparent; border: none;")
+        editor_layout = QVBoxLayout(self.sam_editor)
+        editor_layout.setContentsMargins(0, 0, 0, 0)
+        editor_layout.setSpacing(5)
+        self.sam_prompt_summary = QLabel("FG LEFT  /  BG RIGHT  /  DRAG BOX")
+        self.sam_prompt_summary.setStyleSheet(
             f"color: {TEXT_MUTED}; font-size: 8px; letter-spacing: .4px;"
         )
-        self.sam_hint.setAlignment(Qt.AlignCenter)
-        self.sam_hint.hide()
-        sam_layout.addWidget(self.sam_hint)
+        self.sam_prompt_summary.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.sam_prompt_summary.setWordWrap(True)
+        editor_layout.addWidget(self.sam_prompt_summary)
+
+        tool_row = QHBoxLayout()
+        tool_row.setSpacing(5)
+        self.sam_undo_btn = QPushButton("Undo")
+        self.sam_clear_btn = QPushButton("Clear")
+        self.sam_run_btn = QPushButton("PREVIEW")
+        for button in (self.sam_undo_btn, self.sam_clear_btn):
+            button.setStyleSheet(secondary_style)
+            tool_row.addWidget(button)
+        tool_row.addStretch(1)
+        self.sam_run_btn.setStyleSheet(primary_style)
+        self.sam_run_btn.setCursor(Qt.PointingHandCursor)
+        tool_row.addWidget(self.sam_run_btn)
+        editor_layout.addLayout(tool_row)
+        sam_layout.addWidget(self.sam_editor)
 
         self.sam_review = QWidget()
         self.sam_review.setStyleSheet("background: transparent; border: none;")
@@ -1562,8 +1587,12 @@ class SlicePanel(HivePanel):
         sam_layout.addWidget(self.sam_review)
 
         self.sam_refine_btn.toggled.connect(self._set_sam_editing)
+        self.sam_undo_btn.clicked.connect(self._undo_sam_prompt)
+        self.sam_clear_btn.clicked.connect(self.clear_sam_prompts)
+        self.sam_run_btn.clicked.connect(self._request_sam_refinement)
         self.sam_accept_btn.clicked.connect(self.accept_requested.emit)
         self.sam_discard_btn.clicked.connect(self.discard_requested.emit)
+        self.sam_editor.hide()
         self.sam_review.hide()
         self.set_sam_preview_available(False)
         layout.addWidget(self.sam_controls)
@@ -1599,7 +1628,7 @@ class SlicePanel(HivePanel):
         self.labels = None
         self.color_map = None
         self._bbox = _content_bbox(volume)
-        self.sam_refine_btn.setChecked(False)
+        self.clear_sam_prompts()
         self.enable_sam(False)
         n_slices = volume.shape[self.axis]
         self.slider.setEnabled(True)
@@ -1656,18 +1685,19 @@ class SlicePanel(HivePanel):
 
     def _sync_sam_controls(self):
         ready = self._sam_enabled and not self._sam_busy
-        self.sam_refine_btn.setEnabled(ready and not self._sam_preview_available)
-        self.sam_refine_btn.setVisible(not self._sam_preview_available)
+        has_prompt = self._sam_box is not None or bool(self._sam_points)
+        self.sam_refine_btn.setEnabled(ready)
+        self.sam_undo_btn.setEnabled(ready and has_prompt)
+        self.sam_clear_btn.setEnabled(ready and has_prompt)
+        self.sam_run_btn.setEnabled(ready and has_prompt)
         self.sam_accept_btn.setEnabled(ready and self._sam_preview_available)
         self.sam_discard_btn.setEnabled(ready and self._sam_preview_available)
         self.sam_review.setVisible(self._sam_preview_available)
 
         if self._sam_busy:
-            status, color = "REFINING", ACCENT_TEAL_SOFT
+            status, color = "PROCESSING", ACCENT_TEAL_SOFT
         elif self._sam_preview_available:
             status, color = "REVIEW", ACCENT_TEAL_SOFT
-        elif self._sam_editing:
-            status, color = "SELECT TUMOR", ACCENT_AMBER_SOFT
         elif self._sam_enabled:
             status, color = "READY", ACCENT_AMBER_SOFT
         else:
@@ -1678,12 +1708,34 @@ class SlicePanel(HivePanel):
             "padding: 2px 6px; font-size: 8px; font-weight: 700;"
         )
 
+        count = len(self._sam_points) + int(self._sam_box is not None)
+        self.sam_prompt_summary.setText(
+            f"{count} PROMPT{'S' if count != 1 else ''}  ·  FG LEFT / BG RIGHT / DRAG BOX"
+            if count else "FG LEFT  /  BG RIGHT  /  DRAG BOX"
+        )
+
     def _set_sam_editing(self, editing: bool):
         self._sam_editing = editing and self._sam_enabled
         self.canvas.setCursor(Qt.CrossCursor if self._sam_editing else Qt.ArrowCursor)
-        self.sam_hint.setVisible(self._sam_editing)
-        self.sam_refine_btn.setText("SELECT TUMOR" if self._sam_editing else "REFINE")
+        self.sam_editor.setVisible(self._sam_editing)
+        self.sam_refine_btn.setText("EDITING" if self._sam_editing else "REFINE")
         self._sync_sam_controls()
+
+    def clear_sam_prompts(self):
+        self._sam_points = []
+        self._sam_box = None
+        self._drag_start = None
+        self._sync_sam_controls()
+        if self.volume is not None:
+            self._draw_slice(self.slider.value())
+
+    def _undo_sam_prompt(self):
+        if self._sam_points:
+            self._sam_points.pop()
+        elif self._sam_box is not None:
+            self._sam_box = None
+        self._sync_sam_controls()
+        self._draw_slice(self.slider.value())
 
     def _event_to_prompt_xy(self, event):
         if event.inaxes is not self.ax or event.xdata is None or event.ydata is None:
@@ -1693,18 +1745,46 @@ class SlicePanel(HivePanel):
         return rotated_to_prompt_xy(event.xdata, event.ydata, rows, cols)
 
     def _on_canvas_press(self, event):
-        if not self._sam_editing or self.volume is None or event.button != 1:
+        if not self._sam_editing or self.volume is None:
             return
         xy = self._event_to_prompt_xy(event)
         if xy is None:
             return
-        self.tumor_clicked.emit({
+        if event.button == 1:
+            self._drag_start = xy
+        elif event.button == 3:
+            self._sam_points.append((xy[0], xy[1], 0))
+            self._sync_sam_controls()
+            self._draw_slice(self.slider.value())
+
+    def _on_canvas_release(self, event):
+        if not self._sam_editing or event.button != 1 or self._drag_start is None:
+            return
+        end = self._event_to_prompt_xy(event)
+        start = self._drag_start
+        self._drag_start = None
+        if end is None:
+            return
+        if abs(end[0] - start[0]) >= 2 or abs(end[1] - start[1]) >= 2:
+            self._sam_box = (
+                min(start[0], end[0]), min(start[1], end[1]),
+                max(start[0], end[0]), max(start[1], end[1]),
+            )
+        else:
+            self._sam_points.append((end[0], end[1], 1))
+        self._sync_sam_controls()
+        self._draw_slice(self.slider.value())
+
+    def _request_sam_refinement(self):
+        if self._sam_box is None and not self._sam_points:
+            return
+        self.refinement_requested.emit({
             "plane": self.plane,
             "slice_index": self.slider.value(),
-            "x": xy[0],
-            "y": xy[1],
+            "box": self._sam_box,
+            "points": [(x, y) for x, y, _label in self._sam_points],
+            "point_labels": [label for _x, _y, label in self._sam_points],
         })
-        self.sam_refine_btn.setChecked(False)
 
     def set_detection(self, probs: np.ndarray, labels: np.ndarray, color_map: dict):
         """
@@ -1826,6 +1906,7 @@ class SlicePanel(HivePanel):
         shown = np.rot90(rgb)
         self.ax.clear()
         self.ax.imshow(shown, aspect="equal", interpolation="bilinear")
+        self._draw_sam_prompts(rgb.shape[0])
         self.ax.set_aspect("equal", adjustable="datalim")
         self._apply_brain_zoom(shown.shape[0], shown.shape[1], rgb.shape[0])
         self.ax.axis("off")
@@ -1833,6 +1914,20 @@ class SlicePanel(HivePanel):
 
         self.title_label.setText(f"{self._base_title}  (SLICE {index})")
         self._sync_hive_overlay()
+
+    def _draw_sam_prompts(self, pre_rot_rows: int):
+        for x, y, label in self._sam_points:
+            shown_x, shown_y = prompt_to_rotated_xy(x, y, pre_rot_rows)
+            color = "#30d158" if label == 1 else "#ff3b30"
+            marker = "+" if label == 1 else "x"
+            self.ax.plot(shown_x, shown_y, marker=marker, color=color, markersize=9, markeredgewidth=2)
+        if self._sam_box is not None:
+            x0, y0, x1, y1 = self._sam_box
+            shown_x0, shown_x1 = pre_rot_rows - 1 - y1, pre_rot_rows - 1 - y0
+            self.ax.add_patch(Rectangle(
+                (shown_x0, x0), shown_x1 - shown_x0, x1 - x0,
+                fill=False, edgecolor=ACCENT_AMBER_SOFT, linewidth=1.8,
+            ))
 
     def _apply_brain_zoom(self, shown_h: int, shown_w: int, pre_rot_rows: int):
         """
@@ -2194,8 +2289,6 @@ class MainWindow(QMainWindow):
         self._volume_transform: Optional[VolumeTransform] = None
         self._committed_mask: Optional[np.ndarray] = None
         self._committed_probs: Optional[np.ndarray] = None
-        self._step1_labels: Optional[np.ndarray] = None
-        self._selected_seed_mask: Optional[np.ndarray] = None
         self._preview_mask: Optional[np.ndarray] = None
         self._sam_refiner = MedSAM2Refiner(MEDSAM2_CHECKPOINT)
         self._model = None
@@ -2330,7 +2423,7 @@ class MainWindow(QMainWindow):
         for panel in self.all_panels:
             panel.maximize_btn.clicked.connect(lambda checked=False, p=panel: self.toggle_maximize(p))
         for panel in self.center_panels:
-            panel.tumor_clicked.connect(self.on_run_sam_refinement)
+            panel.refinement_requested.connect(self.on_run_sam_refinement)
             panel.accept_requested.connect(self.on_accept_sam_refinement)
             panel.discard_requested.connect(self.on_discard_sam_refinement)
 
@@ -2456,11 +2549,8 @@ class MainWindow(QMainWindow):
         self._volume_transform = result["transform"]
         self._committed_mask = mask.copy()
         self._committed_probs = probs.copy()
-        self._step1_labels = labels.copy()
-        self._selected_seed_mask = None
         self._preview_mask = None
-        self._set_sam_preview_available(False)
-        self._set_sam_available(bool(np.any(mask)))
+        self._set_sam_available(True)
 
         self.busy_bar.hide()
         self.run_seg_btn.setEnabled(True)
@@ -2557,11 +2647,9 @@ class MainWindow(QMainWindow):
         for panel in self.center_panels:
             panel.set_sam_preview_available(available)
 
-    def _show_binary_mask(self, mask: np.ndarray, color: Optional[str] = None):
+    def _show_binary_mask(self, mask: np.ndarray):
         voxel_vol_cm3 = self._voxel_volume_cm3(self._display_affine)
         labels, _components, color_map = self._label_tumor_components(mask, None, voxel_vol_cm3)
-        if color is not None:
-            color_map = {label_id: color for label_id in color_map}
         for panel in self.center_panels:
             panel.set_refined_detection(mask, labels, color_map)
         self.patients_record_panel.set_volume(float(mask.sum()) * voxel_vol_cm3)
@@ -2580,56 +2668,35 @@ class MainWindow(QMainWindow):
         else:
             self._show_binary_mask(self._committed_mask)
 
-    def on_run_sam_refinement(self, click: dict):
-        if self._busy or self._display_volume is None or self._step1_labels is None:
+    def on_run_sam_refinement(self, prompt: dict):
+        if self._busy or self._display_volume is None or self._committed_mask is None:
             return
-        component_id = select_component_at_click(
-            self._step1_labels,
-            click["plane"],
-            click["slice_index"],
-            click["x"],
-            click["y"],
-        )
-        if component_id is None:
-            QMessageBox.information(
-                self,
-                "Select a tumor",
-                "Click directly on a highlighted Step 1 tumor, or within the nearby snap area.",
-            )
-            return
-
         volume = self._display_volume.copy()
-        seed = (self._step1_labels == component_id).astype(np.float32)
-        self._selected_seed_mask = seed.copy()
-        self._committed_mask = seed.copy()
-        self._committed_probs = None
-        self._preview_mask = None
-        self._show_binary_mask(seed, ACCENT_AMBER_SOFT)
+        seed = self._committed_mask.copy()
         self.busy_bar.show()
         self._set_sam_busy(True)
         self._set_2d_loading(True)
 
         def job():
-            mask, quality = self._sam_refiner.refine(
+            mask = self._sam_refiner.refine(
                 volume=volume,
-                selected_mask=seed,
-                plane=click["plane"],
+                seed_mask=seed,
+                plane=prompt["plane"],
+                slice_index=prompt["slice_index"],
+                box=prompt["box"],
+                points=prompt["points"],
+                point_labels=prompt["point_labels"],
             )
             volume_3d, mask_3d, spacing = _prepare_3d(volume, mask, self._display_affine)
             tumor_fig = build_tumor_figure(mask_3d, spacing) if np.any(mask_3d) else None
             brain_fig = build_brain_figure(volume_3d, mask_3d, spacing)
-            return {
-                "mask": mask,
-                "quality": quality,
-                "tumor_fig": tumor_fig,
-                "brain_fig": brain_fig,
-            }
+            return {"mask": mask, "tumor_fig": tumor_fig, "brain_fig": brain_fig}
 
         self._start_background(job, self._on_sam_refinement_ready, self._on_sam_refinement_failed)
 
     def _on_sam_refinement_ready(self, result: dict):
         self._preview_mask = result["mask"]
-        self._show_binary_mask(self._preview_mask, ACCENT_TEAL_SOFT)
+        self._show_binary_mask(self._preview_mask)
         self._set_2d_loading(False)
         self._set_sam_busy(False)
         self._set_sam_preview_available(True)
@@ -2641,19 +2708,9 @@ class MainWindow(QMainWindow):
     def _on_sam_refinement_failed(self, message: str):
         self._set_2d_loading(False)
         self._set_sam_busy(False)
-        self._set_sam_preview_available(False)
         self.busy_bar.hide()
         self._busy = False
-        if self._selected_seed_mask is not None:
-            self._committed_mask = self._selected_seed_mask.copy()
-            self._committed_probs = None
-            self._show_binary_mask(self._committed_mask, ACCENT_AMBER_SOFT)
-            self._update_3d_views(self._display_volume, self._committed_mask, self._display_affine)
-        QMessageBox.warning(
-            self,
-            "MedSAM2 refinement not accepted",
-            f"{message}\n\nThe selected Step 1 tumor has been kept unchanged.",
-        )
+        QMessageBox.critical(self, "MedSAM2 refinement failed", message)
 
     def on_accept_sam_refinement(self):
         if self._preview_mask is None or self._volume_transform is None or self.current_folder is None:
@@ -2667,8 +2724,9 @@ class MainWindow(QMainWindow):
         self._committed_mask = self._preview_mask.copy()
         self._committed_probs = None
         self._preview_mask = None
-        self._selected_seed_mask = self._committed_mask.copy()
         self._set_sam_preview_available(False)
+        for panel in self.center_panels:
+            panel.clear_sam_prompts()
         self._show_committed_mask()
         self._update_3d_views(self._display_volume, self._committed_mask, self._display_affine)
         QMessageBox.information(self, "Refined mask saved", f"Saved to:\n{destination}")
@@ -2678,10 +2736,7 @@ class MainWindow(QMainWindow):
             return
         self._preview_mask = None
         self._set_sam_preview_available(False)
-        if self._selected_seed_mask is not None:
-            self._committed_mask = self._selected_seed_mask.copy()
-            self._committed_probs = None
-        self._show_binary_mask(self._committed_mask, ACCENT_AMBER_SOFT)
+        self._show_committed_mask()
         self._update_3d_views(self._display_volume, self._committed_mask, self._display_affine)
 
     def _update_3d_views(
@@ -2858,8 +2913,6 @@ class MainWindow(QMainWindow):
         self.survival_panel.set_days(None)
         self._committed_mask = None
         self._committed_probs = None
-        self._step1_labels = None
-        self._selected_seed_mask = None
         self._preview_mask = None
         self._volume_transform = None
         self._set_sam_available(False)
