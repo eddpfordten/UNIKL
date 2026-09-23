@@ -86,5 +86,30 @@ OUTPUT_DIR = PROJECT_ROOT / "outputs"
 CHECKPOINT_DIR = OUTPUT_DIR / "checkpoints"
 PLOT_DIR = OUTPUT_DIR / "plots"
 
+# ---------------------------------------------------------------------------
+# 3D PyRadiomics settings
+# ---------------------------------------------------------------------------
+# Features are extracted from the *native* NIfTI MRI volumes (not the resized
+# 96^3 training tensors), so voxel spacing and intensity stay clinically
+# meaningful. Results are written as CSV under outputs/radiomics/.
+RADIOMICS_DIR = OUTPUT_DIR / "radiomics"
+
+# Which of the 4 BraTS MRI channels to run PyRadiomics on.
+RADIOMICS_MODALITIES = list(MODALITIES)
+
+# Histogram bin width used after MRI intensity normalisation.
+RADIOMICS_BIN_WIDTH = 25
+
+# Label value written into the ROI mask that PyRadiomics reads.
+# Whole-tumor voxels (BraTS labels 1, 2, 4) are remapped to this value.
+RADIOMICS_LABEL = 1
+
+# Fuse offline PyRadiomics vectors into the survival head (concat with CNN
+# pooled features + log tumor volume). Extraction stays in the radiomics
+# notebook cells; training only loads the CSV. Trainer.train() is unchanged.
+FUSE_RADIOMICS = True
+RADIOMICS_FEATURES_CSV = RADIOMICS_DIR / "pyradiomics_3d_train_val_split.csv"
+RADIOMICS_STATS_FILENAME = "radiomics_stats.json"
+
 # Random seed for reproducibility
 SEED = 42

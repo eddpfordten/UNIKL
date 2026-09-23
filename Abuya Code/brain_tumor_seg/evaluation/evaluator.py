@@ -147,8 +147,12 @@ def evaluate_model(
         images = batch["image"].to(device)
         masks = batch["mask"].to(device) if "mask" in batch else None
 
+        radiomics = batch.get("radiomics")
+        if radiomics is not None:
+            radiomics = radiomics.to(device)
+
         logits, survival_pred = split_model_outputs(
-            run_model(model, images, tumor_mask=masks)
+            run_model(model, images, tumor_mask=masks, radiomics=radiomics)
         )
 
         if masks is not None:
@@ -220,6 +224,7 @@ def predict_survival_days(
     device: torch.device,
     survival_stats: SurvivalStats,
     tumor_mask: Optional[torch.Tensor] = None,
+    radiomics: Optional[torch.Tensor] = None,
 ) -> float:
     """
     Predict overall survival for a single case, in days.
@@ -236,6 +241,8 @@ def predict_survival_days(
         survival_stats: The normalization the model was trained against.
         tumor_mask:     Optional (1, D, H, W) or (D, H, W) tumor. None means
                         use the predicted tumor from this forward pass.
+        radiomics:      Optional (radiomics_dim,) or (1, radiomics_dim) vector
+                        when the model was trained with FUSE_RADIOMICS.
 
     Returns:
         Predicted survival in days.
@@ -257,7 +264,15 @@ def predict_survival_days(
         elif mask.dim() == 4:
             mask = mask.unsqueeze(0)
 
-    _, survival = split_model_outputs(run_model(model, image, tumor_mask=mask))
+    rad = None
+    if radiomics is not None:
+        rad = radiomics.to(device)
+        if rad.dim() == 1:
+            rad = rad.unsqueeze(0)
+
+    _, survival = split_model_outputs(
+        run_model(model, image, tumor_mask=mask, radiomics=rad)
+    )
     if survival is None:
         raise AttributeError(
             f"{type(model).__name__} has no survival head; use MultiTaskUNet3D."

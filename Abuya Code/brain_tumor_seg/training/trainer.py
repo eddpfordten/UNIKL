@@ -144,11 +144,21 @@ class Trainer:
                 images = batch["image"].to(self.device)
                 masks = batch["mask"].to(self.device)
 
+                # Optional late-fusion radiomics vector (same Trainer API).
+                radiomics = batch.get("radiomics")
+                if radiomics is not None:
+                    radiomics = radiomics.to(self.device)
+
                 # Pass the ground-truth tumor so the survival head trains on
                 # the actual mass, not a whole-brain average or a half-trained
                 # predicted mask.
                 logits, survival_pred = split_model_outputs(
-                    run_model(self.model, images, tumor_mask=masks)
+                    run_model(
+                        self.model,
+                        images,
+                        tumor_mask=masks,
+                        radiomics=radiomics,
+                    )
                 )
                 loss = self._compute_loss(logits, masks)
 

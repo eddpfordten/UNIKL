@@ -1,5 +1,5 @@
 # Runtime dependencies for the BraTS-PEDs 3D U-Net project.
-# Versions are the ones verified working on Python 3.13 / Windows.
+# Versions are the ones verified working on Python 3.12 / Windows.
 
 # Model and training
 torch==2.13.0
@@ -9,6 +9,14 @@ tqdm==4.70.0
 numpy==2.4.4
 scipy==1.17.1
 nibabel==5.4.2
+
+# 3D radiomic features from native MRI volumes (SimpleITK reads NIfTI as
+# sitk.Image for PyRadiomics). Official PyPI has no Python 3.12 wheels, and
+# building from source needs MSVC. Use the prebuilt cp312 Windows wheel:
+#     py -3.12 -m pip install SimpleITK PyWavelets
+#     py -3.12 -m pip install "https://github.com/steubk/pyradiomics/releases/download/prebuilt-fix-py312/pyradiomics-3.1.0%2Bpy312fix.363964e-cp312-cp312-win_amd64.whl"
+SimpleITK>=2.3.0
+PyWavelets>=1.6.0
 
 # 2D slice views
 matplotlib==3.10.8

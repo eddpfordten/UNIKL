@@ -3,8 +3,10 @@ Dataset classes for BraTS-PEDs NIfTI volumes.
 
 Each case folder contains 4 MRI modalities and (for training) a segmentation mask.
 """
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import nibabel as nib
 import numpy as np
@@ -14,6 +16,9 @@ from torch.utils.data import Dataset
 
 from brain_tumor_seg.config import MODALITIES, TARGET_SHAPE
 from brain_tumor_seg.data.survival import SurvivalStats
+
+if TYPE_CHECKING:
+    from brain_tumor_seg.radiomics.features import RadiomicsFeatureTable
 
 
 def _load_nifti(path: Path) -> np.ndarray:
@@ -56,6 +61,9 @@ class BraTSDataset(Dataset):
     for less than half the cases, so every sample carries a 'has_survival' flag
     and the unlabeled ones are masked out of the survival loss instead of being
     excluded from the dataset.
+
+    When a RadiomicsFeatureTable is attached, each sample also carries a
+    'radiomics' vector fused into the survival head during training.
     """
 
     def __init__(
@@ -72,8 +80,18 @@ class BraTSDataset(Dataset):
 
         self.survival: Optional[Dict[str, float]] = None
         self.survival_stats: Optional[SurvivalStats] = None
+        self.radiomics: Optional["RadiomicsFeatureTable"] = None
         if survival is not None:
             self.attach_survival(survival, survival_stats)
+
+    def attach_radiomics(self, table: "RadiomicsFeatureTable") -> None:
+        """
+        Attach offline PyRadiomics vectors looked up by case_id.
+
+        Same pattern as attach_survival: call after random_split so both
+        Subsets see the table through the shared BraTSDataset instance.
+        """
+        self.radiomics = table
 
     def attach_survival(
         self,
@@ -156,6 +174,9 @@ class BraTSDataset(Dataset):
         if self.survival is not None:
             sample.update(self._survival_sample(case_id))
 
+        if self.radiomics is not None:
+            sample["radiomics"] = torch.from_numpy(self.radiomics.vector(case_id))
+
         return sample
 
 
@@ -175,6 +196,11 @@ class BraTSInferenceDataset(Dataset):
         self.data_dir = Path(data_dir)
         self.target_shape = target_shape
         self.case_ids = case_ids if case_ids is not None else _list_case_ids(self.data_dir)
+        self.radiomics: Optional["RadiomicsFeatureTable"] = None
+
+    def attach_radiomics(self, table: "RadiomicsFeatureTable") -> None:
+        """Optional radiomics lookup for fused survival inference."""
+        self.radiomics = table
 
     def __len__(self) -> int:
         return len(self.case_ids)
@@ -192,7 +218,10 @@ class BraTSInferenceDataset(Dataset):
 
         image = np.stack(channels, axis=0)
 
-        return {
+        sample = {
             "image": torch.from_numpy(image),
             "case_id": case_id,
         }
+        if self.radiomics is not None:
+            sample["radiomics"] = torch.from_numpy(self.radiomics.vector(case_id))
+        return sample
