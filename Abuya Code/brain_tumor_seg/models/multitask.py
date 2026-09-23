@@ -7,8 +7,9 @@ only inside the tumor and also sees tumor volume. That is the signal the
 clinical question asks for — survival given this mass — rather than a
 whole-volume embedding that could latch onto unrelated anatomy.
 
-When radiomics_dim > 0, offline PyRadiomics vectors are concatenated with the
-CNN pooled features and log tumor volume before the MLP (late fusion).
+When radiomics_dim > 0, offline PyRadiomics vectors are fused into the U-Net
+bottleneck (normalise → project → reshape to match ``b``), so both
+segmentation and the survival head see the radiomics-conditioned features.
 
 During training the ground-truth mask is used, so the head learns from the
 actual tumor. At inference the predicted mask is used instead. The mask is
@@ -70,8 +71,8 @@ def run_model(
     """
     Forward a batch, passing optional tumor mask / radiomics when supported.
 
-    A plain UNet3D ignores both; MultiTaskUNet3D pools survival features
-    inside the mask and optionally fuses radiomics into the survival MLP.
+    A plain UNet3D fuses radiomics at the bottleneck when configured;
+    MultiTaskUNet3D also pools survival features inside the tumor mask.
     """
     params = inspect.signature(model.forward).parameters
     kwargs = {}
@@ -112,41 +113,27 @@ def masked_average_pool(features: torch.Tensor, mask: torch.Tensor) -> torch.Ten
 
 class SurvivalHead(nn.Module):
     """
-    Per-patient survival regressor from tumor-local CNN features (+ radiomics).
+    Per-patient survival regressor from tumor-local CNN features.
 
     Masked average pooling keeps only the voxels the tumor occupies. Log tumor
-    volume is concatenated so size is an explicit input. When radiomics_dim > 0,
-    offline PyRadiomics features are concatenated as well (late fusion).
+    volume is concatenated so size is an explicit input. Radiomics are fused
+    earlier inside UNet3D's bottleneck when radiomics_dim > 0 on the backbone.
     """
 
-    def __init__(
-        self,
-        in_channels: int,
-        hidden_features: int = 64,
-        dropout: float = 0.3,
-        radiomics_dim: int = 0,
-    ):
+    def __init__(self, in_channels: int, hidden_features: int = 64, dropout: float = 0.3):
         super().__init__()
-        self.radiomics_dim = int(radiomics_dim)
-        mlp_in = in_channels + 1 + self.radiomics_dim
         self.mlp = nn.Sequential(
-            nn.Linear(mlp_in, hidden_features),
+            nn.Linear(in_channels + 1, hidden_features),
             nn.ReLU(inplace=True),
             nn.Dropout(dropout),
             nn.Linear(hidden_features, 1),
         )
 
-    def forward(
-        self,
-        features: torch.Tensor,
-        tumor_mask: torch.Tensor,
-        radiomics: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+    def forward(self, features: torch.Tensor, tumor_mask: torch.Tensor) -> torch.Tensor:
         """
         Args:
             features:   Feature map of shape (batch, in_channels, D, H, W).
             tumor_mask: Tumor mask of shape (batch, 1, d, h, w), values in [0, 1].
-            radiomics:  Optional (batch, radiomics_dim). Zeros if expected but missing.
 
         Returns:
             Normalized survival prediction of shape (batch,).
@@ -156,16 +143,7 @@ class SurvivalHead(nn.Module):
         # the volume feature matches the mask the caller actually passed.
         voxel_count = tumor_mask.reshape(tumor_mask.size(0), -1).sum(dim=1, keepdim=True)
         volume = torch.log1p(voxel_count)
-
-        parts = [pooled, volume]
-        if self.radiomics_dim > 0:
-            if radiomics is None:
-                radiomics = features.new_zeros(features.size(0), self.radiomics_dim)
-            elif radiomics.dim() == 1:
-                radiomics = radiomics.unsqueeze(0)
-            parts.append(radiomics)
-
-        return self.mlp(torch.cat(parts, dim=1)).squeeze(-1)
+        return self.mlp(torch.cat([pooled, volume], dim=1)).squeeze(-1)
 
 
 class MultiTaskUNet3D(nn.Module):
@@ -188,12 +166,16 @@ class MultiTaskUNet3D(nn.Module):
     ):
         super().__init__()
         self.radiomics_dim = int(radiomics_dim)
-        self.segmentation = segmentation or UNet3D(in_channels, out_channels, base_features)
+        self.segmentation = segmentation or UNet3D(
+            in_channels,
+            out_channels,
+            base_features,
+            radiomics_dim=self.radiomics_dim,
+        )
         self.survival_head = SurvivalHead(
             self.segmentation.bottleneck_channels,
             hidden_features=survival_hidden,
             dropout=survival_dropout,
-            radiomics_dim=self.radiomics_dim,
         )
 
     def forward(
@@ -208,18 +190,17 @@ class MultiTaskUNet3D(nn.Module):
             tumor_mask: Optional (batch, 1, D, H, W) tumor. Pass the
                         ground-truth mask during training. Omit it at
                         inference and the predicted tumor is used instead.
-            radiomics:  Optional (batch, radiomics_dim) PyRadiomics vector.
+            radiomics:  Optional (batch, radiomics_dim) PyRadiomics vector,
+                        fused into the U-Net bottleneck.
         """
-        seg_logits, bottleneck = self.segmentation.forward_features(x)
+        seg_logits, bottleneck = self.segmentation.forward_features(
+            x, radiomics=radiomics
+        )
         if tumor_mask is None:
             tumor_mask = torch.sigmoid(seg_logits)
         # Detach: survival should *read* the tumor, not reshape it to fit the
         # survival target.
-        survival = self.survival_head(
-            bottleneck,
-            tumor_mask.detach(),
-            radiomics=radiomics,
-        )
+        survival = self.survival_head(bottleneck, tumor_mask.detach())
         return MultiTaskOutput(seg_logits=seg_logits, survival=survival)
 
     def load_segmentation_weights(
@@ -256,4 +237,6 @@ class MultiTaskUNet3D(nn.Module):
                 if key.startswith(prefix)
             }
 
-        self.segmentation.load_state_dict(state_dict, strict=strict)
+        # Radiomics projection layers are new vs segmentation-only checkpoints.
+        load_strict = False if self.radiomics_dim > 0 else strict
+        self.segmentation.load_state_dict(state_dict, strict=load_strict)
