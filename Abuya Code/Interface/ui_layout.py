@@ -58,6 +58,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QStackedLayout, QScrollArea,
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWebEngineCore import QWebEnginePage
 
 import numpy as np
 import nibabel as nib
@@ -1349,6 +1350,8 @@ class SlicePanel(HivePanel):
     refinement_requested = Signal(object)
     accept_requested = Signal()
     discard_requested = Signal()
+    mask_edited = Signal(object)
+    mask_undo_requested = Signal()
 
     def __init__(self, title: str, axis: int, min_height: int = 200):
         super().__init__()
@@ -1368,6 +1371,11 @@ class SlicePanel(HivePanel):
         self._drag_start = None
         self._sam_prompt_slice = None
         self._resize_redraw_pending = False
+        self._mask_edit_enabled = False
+        self._mask_edit_mode = None  # "eraser" or None
+        self._mask_stroke = []
+        self._mask_emitted_count = 0
+        self._mask_dragging = False
 
         self.setFrameShape(QFrame.Box)
         # Pure black background (not the charcoal BG_PANEL used elsewhere)
@@ -1413,6 +1421,7 @@ class SlicePanel(HivePanel):
         self.ax.axis("off")
         self.canvas.mpl_connect("button_press_event", self._on_canvas_press)
         self.canvas.mpl_connect("button_release_event", self._on_canvas_release)
+        self.canvas.mpl_connect("motion_notify_event", self._on_canvas_motion)
 
         # Canvas + loading overlay share the same space via a stacked
         # layout, so the spinner appears directly on top of the slice
@@ -1484,6 +1493,41 @@ class SlicePanel(HivePanel):
         self.slider.valueChanged.connect(self._on_slider_changed)
         slider_layout.addWidget(self.slider)
         layout.addWidget(slider_wrap)
+
+        # Manual mask correction for removing false-positive tumor voxels.
+        # An eraser stroke is committed on mouse-up so
+        # all three planes and both 3D views stay synchronized.
+        self.mask_tools = QWidget()
+        self.mask_tools.setStyleSheet("background: transparent; border: none;")
+        mask_tools_layout = QHBoxLayout(self.mask_tools)
+        mask_tools_layout.setContentsMargins(2, 0, 2, 0)
+        mask_tools_layout.setSpacing(5)
+        mask_label = QLabel("DRAG IMAGE TO ERASE")
+        mask_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; border: none; font-size: 8px; font-weight: 700;"
+        )
+        self.eraser_size = QSlider(Qt.Horizontal)
+        self.eraser_size.setRange(1, 20)
+        self.eraser_size.setValue(5)
+        self.eraser_size.setFixedWidth(65)
+        self.eraser_size.setToolTip("Eraser radius in voxels")
+        self.eraser_undo_btn = QPushButton("UNDO")
+        self.eraser_undo_btn.setEnabled(False)
+        self.eraser_undo_btn.setCursor(Qt.PointingHandCursor)
+        self.eraser_undo_btn.setStyleSheet(
+            f"QPushButton {{ color: {TEXT_MUTED}; background: #121216; "
+            f"border: 1px solid {BORDER_DIM}; border-radius: 6px; "
+            "padding: 3px 7px; font-size: 8px; font-weight: 700; }"
+            f"QPushButton:hover {{ color: {TEXT_LIGHT}; border-color: {ACCENT_AMBER}; }}"
+            "QPushButton:disabled { color: #4c494d; border-color: #29272a; }"
+        )
+        mask_tools_layout.addWidget(mask_label)
+        mask_tools_layout.addStretch(1)
+        mask_tools_layout.addWidget(QLabel("SIZE"))
+        mask_tools_layout.addWidget(self.eraser_size)
+        mask_tools_layout.addWidget(self.eraser_undo_btn)
+        layout.addWidget(self.mask_tools)
+        self.eraser_undo_btn.clicked.connect(self.mask_undo_requested.emit)
 
         # MedSAM2 uses progressive disclosure: the normal scan view gets one
         # clean action row, while prompt and review tools appear only when they
@@ -1632,6 +1676,7 @@ class SlicePanel(HivePanel):
         self._bbox = _content_bbox(volume)
         self.clear_sam_prompts()
         self.enable_sam(False)
+        self.enable_mask_editing(False)
         n_slices = volume.shape[self.axis]
         self.slider.setEnabled(True)
         self.slider.setMinimum(0)
@@ -1655,6 +1700,7 @@ class SlicePanel(HivePanel):
         self.probs = None
         self.labels = None
         self.color_map = None
+        self.enable_mask_editing(True)
         self._draw_slice(self.slider.value())
 
     def clear_detection(self):
@@ -1663,6 +1709,7 @@ class SlicePanel(HivePanel):
         self.probs = None
         self.labels = None
         self.color_map = None
+        self.enable_mask_editing(False)
         if self.volume is not None:
             self._draw_slice(self.slider.value())
 
@@ -1674,6 +1721,7 @@ class SlicePanel(HivePanel):
         self.probs = None
         self.labels = labels
         self.color_map = color_map
+        self.enable_mask_editing(True)
         self._draw_slice(self.slider.value())
 
     @property
@@ -1726,8 +1774,14 @@ class SlicePanel(HivePanel):
         )
 
     def _set_sam_editing(self, editing: bool):
+        if editing:
+            self._set_mask_edit_mode(None)
         self._sam_editing = editing and self._sam_enabled
-        self.canvas.setCursor(Qt.CrossCursor if self._sam_editing else Qt.ArrowCursor)
+        if not self._sam_editing and self._mask_edit_enabled:
+            self._set_mask_edit_mode("eraser")
+        self.canvas.setCursor(
+            Qt.CrossCursor if self._sam_editing or self._mask_edit_mode else Qt.ArrowCursor
+        )
         self.sam_editor.setVisible(self._sam_editing)
         self.sam_refine_btn.setText("EDITING" if self._sam_editing else "REFINE")
         self._sync_sam_controls()
@@ -1756,7 +1810,57 @@ class SlicePanel(HivePanel):
         rows, cols = current.shape
         return rotated_to_prompt_xy(event.xdata, event.ydata, rows, cols)
 
+    def enable_mask_editing(self, enabled: bool):
+        self._mask_edit_enabled = bool(enabled)
+        self.eraser_size.setEnabled(enabled)
+        if not enabled:
+            self.eraser_undo_btn.setEnabled(False)
+        self._set_mask_edit_mode("eraser" if enabled and not self._sam_editing else None)
+
+    def set_mask_undo_available(self, available: bool):
+        # Undo remains usable while a previous 3D refresh is running; a newer
+        # mask refresh will supersede the stale result when it completes.
+        self.eraser_undo_btn.setEnabled(available)
+
+    def _set_mask_edit_mode(self, mode):
+        self._mask_edit_mode = mode
+        if mode is not None and self.sam_refine_btn.isChecked():
+            self.sam_refine_btn.setChecked(False)
+        self.canvas.setCursor(Qt.CrossCursor if mode or self._sam_editing else Qt.ArrowCursor)
+
+    def _append_mask_stroke_point(self, event):
+        xy = self._event_to_prompt_xy(event)
+        if xy is None:
+            return
+        point = (int(round(xy[0])), int(round(xy[1])))
+        if not self._mask_stroke or point != self._mask_stroke[-1]:
+            self._mask_stroke.append(point)
+
+    def _emit_mask_stroke(self, final: bool = False, start_of_stroke: bool = False):
+        """Send only newly sampled points; `final` requests the costly full refresh."""
+        # Include the previously emitted endpoint so the receiver can fill
+        # the line to the first new sample even when mouse events are sparse.
+        start = max(0, self._mask_emitted_count - 1)
+        new_points = self._mask_stroke[start:]
+        if new_points or final:
+            self.mask_edited.emit({
+                "plane": self.plane,
+                "slice_index": self.slider.value(),
+                "points": list(new_points),
+                "radius": self.eraser_size.value(),
+                "final": final,
+                "start": start_of_stroke,
+            })
+            self._mask_emitted_count = len(self._mask_stroke)
+
     def _on_canvas_press(self, event):
+        if self._mask_edit_mode is not None and self.volume is not None and event.button == 1:
+            self._mask_stroke = []
+            self._mask_emitted_count = 0
+            self._mask_dragging = True
+            self._append_mask_stroke_point(event)
+            self._emit_mask_stroke(start_of_stroke=True)
+            return
         if not self._sam_editing or self.volume is None:
             return
         xy = self._event_to_prompt_xy(event)
@@ -1774,6 +1878,13 @@ class SlicePanel(HivePanel):
             self._draw_slice(self.slider.value())
 
     def _on_canvas_release(self, event):
+        if self._mask_dragging and event.button == 1:
+            self._append_mask_stroke_point(event)
+            self._mask_dragging = False
+            self._emit_mask_stroke(final=True)
+            self._mask_stroke = []
+            self._mask_emitted_count = 0
+            return
         if not self._sam_editing or event.button != 1 or self._drag_start is None:
             return
         end = self._event_to_prompt_xy(event)
@@ -1793,6 +1904,11 @@ class SlicePanel(HivePanel):
             self._sam_points.append((end[0], end[1], 1))
         self._sync_sam_controls()
         self._draw_slice(self.slider.value())
+
+    def _on_canvas_motion(self, event):
+        if self._mask_dragging:
+            self._append_mask_stroke_point(event)
+            self._emit_mask_stroke()
 
     def _request_sam_refinement(self):
         if self._sam_box is None and not self._sam_points:
@@ -1830,6 +1946,7 @@ class SlicePanel(HivePanel):
         self.labels = labels
         self.color_map = color_map
         self.mask = None  # heatmap supersedes the binary overlay for display
+        self.enable_mask_editing(True)
         self._draw_slice(self.slider.value())
 
     def _on_slider_changed(self, index: int):
@@ -2151,6 +2268,67 @@ def _inject_middle_click_pan(html_path: str):
         pass
 
 
+def _inject_tumor_selection(html_path: str):
+    """Send tumor/background clicks to Qt through a private console prefix."""
+    try:
+        path = Path(html_path)
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+
+    script_block = """
+<script>
+(function() {
+    function setupTumorSelection() {
+        var gd = document.querySelector('.plotly-graph-div');
+        if (!gd || !gd.on) { setTimeout(setupTumorSelection, 100); return; }
+
+        var downX = 0, downY = 0, plotlyHit = false;
+        gd.addEventListener('mousedown', function(e) {
+            if (e.button !== 0) return;
+            downX = e.clientX; downY = e.clientY; plotlyHit = false;
+        });
+        gd.on('plotly_click', function(data) {
+            plotlyHit = true;
+            var point = data && data.points && data.points[0];
+            var meta = point && point.data && point.data.meta;
+            var id = meta && meta.tumor_component_id;
+            console.log('__TUMOR_SELECT__:' + (id == null ? 'all' : id));
+        });
+        gd.addEventListener('mouseup', function(e) {
+            if (e.button !== 0) return;
+            var moved = Math.hypot(e.clientX - downX, e.clientY - downY) > 4;
+            setTimeout(function() {
+                if (!moved && !plotlyHit) console.log('__TUMOR_SELECT__:all');
+            }, 80);
+        });
+    }
+    setupTumorSelection();
+})();
+</script>
+"""
+    if "</body>" in content:
+        content = content.replace("</body>", f"{script_block}</body>", 1)
+    else:
+        content += script_block
+    try:
+        path.write_text(content, encoding="utf-8")
+    except OSError:
+        pass
+
+
+class _PlotlyPage(QWebEnginePage):
+    tumor_selected = Signal(object)
+
+    def javaScriptConsoleMessage(self, level, message, line_number, source_id):
+        prefix = "__TUMOR_SELECT__:"
+        if message.startswith(prefix):
+            value = message[len(prefix):]
+            self.tumor_selected.emit(None if value == "all" else int(value))
+            return
+        super().javaScriptConsoleMessage(level, message, line_number, source_id)
+
+
 class Panel3D(HivePanel):
     """
     A bordered panel that shows an interactive 3D Plotly figure (rotate,
@@ -2160,6 +2338,8 @@ class Panel3D(HivePanel):
     existing viewer3d.py, just pointed at a temp file instead of a
     user-chosen path.
     """
+
+    tumor_selected = Signal(object)
 
     def __init__(self, title: str, min_height: int = 200, accent: str = ACCENT_TEAL):
         super().__init__()
@@ -2192,6 +2372,9 @@ class Panel3D(HivePanel):
         view_stack.setStackingMode(QStackedLayout.StackAll)
 
         self.web_view = QWebEngineView()
+        self._plotly_page = _PlotlyPage(self.web_view)
+        self._plotly_page.tumor_selected.connect(self.tumor_selected.emit)
+        self.web_view.setPage(self._plotly_page)
         self.web_view.setStyleSheet(f"background-color: {BG_PANEL}; border: none;")
         self.web_view.page().setBackgroundColor(QColor(BG_PANEL))
         self.web_view.setHtml(
@@ -2230,9 +2413,28 @@ class Panel3D(HivePanel):
         )
         _inject_dark_page_style(tmp.name)
         _inject_middle_click_pan(tmp.name)
+        _inject_tumor_selection(tmp.name)
         self._temp_files.append(tmp.name)
         self.web_view.load(QUrl.fromLocalFile(tmp.name))
         QTimer.singleShot(0, self._sync_hive_overlay)
+
+    def select_tumor(self, component_id: Optional[int]):
+        """Show one tumor trace, or all tumor traces when component_id is None."""
+        selected = "null" if component_id is None else str(int(component_id))
+        script = f"""
+        (function() {{
+            var gd = document.querySelector('.plotly-graph-div');
+            if (!gd || !gd.data) return;
+            var selected = {selected};
+            var visibility = gd.data.map(function(trace) {{
+                var meta = trace.meta || {{}};
+                var id = meta.tumor_component_id;
+                return id == null || selected == null || id === selected;
+            }});
+            Plotly.restyle(gd, {{visible: visibility}});
+        }})();
+        """
+        self.web_view.page().runJavaScript(script)
 
     def clear_figure(self):
         """Restore the empty state when there is no tumor mask to render."""
@@ -2293,7 +2495,18 @@ def build_tumor_figure(mask: np.ndarray, spacing: tuple) -> go.Figure:
         clean=True,
         show_legend=False,
     )
-    return _style_ui_figure(fig)
+    return _style_ui_figure(_tag_tumor_traces(fig))
+
+
+def _tag_tumor_traces(fig: go.Figure) -> go.Figure:
+    """Attach stable component IDs used by the embedded Plotly click bridge."""
+    for trace in fig.data:
+        match = re.match(r"^#(\d+)\b", str(trace.name or ""))
+        trace.meta = (
+            {"tumor_component_id": int(match.group(1))}
+            if match else {"surface": "brain"}
+        )
+    return fig
 
 
 def build_brain_figure(
@@ -2312,7 +2525,7 @@ def build_brain_figure(
         clean=True,
         show_legend=False,
     )
-    return _style_ui_figure(fig)
+    return _style_ui_figure(_tag_tumor_traces(fig))
 
 
 class MainWindow(QMainWindow):
@@ -2353,6 +2566,10 @@ class MainWindow(QMainWindow):
         self._committed_mask: Optional[np.ndarray] = None
         self._committed_probs: Optional[np.ndarray] = None
         self._preview_mask: Optional[np.ndarray] = None
+        self._mask_undo_stack: list[np.ndarray] = []
+        self._mask_revision = 0
+        self._mask_refresh_in_progress = False
+        self._pending_mask_refresh = False
         self._sam_refiner = MedSAM2Refiner(MEDSAM2_CHECKPOINT)
         self._model = None
         self._device = None
@@ -2485,10 +2702,19 @@ class MainWindow(QMainWindow):
 
         for panel in self.all_panels:
             panel.maximize_btn.clicked.connect(lambda checked=False, p=panel: self.toggle_maximize(p))
+        for panel in self.right_panels:
+            panel.tumor_selected.connect(self.on_tumor_selected)
         for panel in self.center_panels:
             panel.refinement_requested.connect(self.on_run_sam_refinement)
             panel.accept_requested.connect(self.on_accept_sam_refinement)
             panel.discard_requested.connect(self.on_discard_sam_refinement)
+            panel.mask_edited.connect(self.on_mask_edited)
+            panel.mask_undo_requested.connect(self.on_mask_undo)
+
+    def on_tumor_selected(self, component_id):
+        """Synchronize tumor isolation across both interactive 3D panels."""
+        for panel in self.right_panels:
+            panel.select_tumor(component_id)
 
     def toggle_maximize(self, panel):
         """Clicking a panel's maximize button hides every other panel (and
@@ -2556,6 +2782,9 @@ class MainWindow(QMainWindow):
     def _on_worker_finished(self):
         self._worker = None
         self._worker_thread = None
+        if self._pending_mask_refresh and self._committed_mask is not None:
+            self._pending_mask_refresh = False
+            QTimer.singleShot(0, lambda: self._start_mask_refresh(self._committed_mask))
 
     def on_run_segmentation(self):
         if self.current_folder is None or self._busy:
@@ -2617,6 +2846,8 @@ class MainWindow(QMainWindow):
         self._committed_mask = mask.copy()
         self._committed_probs = probs.copy()
         self._preview_mask = None
+        self._mask_undo_stack.clear()
+        self._set_mask_undo_available()
         self._set_sam_available(True)
 
         self.busy_bar.hide()
@@ -2714,6 +2945,11 @@ class MainWindow(QMainWindow):
         for panel in self.center_panels:
             panel.set_sam_preview_available(available)
 
+    def _set_mask_undo_available(self):
+        available = bool(self._mask_undo_stack)
+        for panel in self.center_panels:
+            panel.set_mask_undo_available(available)
+
     def _show_binary_mask(self, mask: np.ndarray):
         voxel_vol_cm3 = self._voxel_volume_cm3(self._display_affine)
         labels, _components, color_map = self._label_tumor_components(mask, None, voxel_vol_cm3)
@@ -2737,6 +2973,163 @@ class MainWindow(QMainWindow):
             self.patients_record_panel.set_volume(float(self._committed_mask.sum()) * voxel_vol_cm3)
         else:
             self._show_binary_mask(self._committed_mask)
+
+    def on_mask_edited(self, stroke: dict):
+        """Apply one 2D eraser stroke to the shared 3D tumor mask."""
+        if self._committed_mask is None or self._busy:
+            return
+
+        # Edit the authoritative mask in place while dragging. Copying and
+        # relabeling the whole 3D volume for every mouse event makes an eraser
+        # feel delayed on clinical-size scans.
+        mask = self._committed_mask
+        if stroke.get("start", False):
+            # Boolean snapshots use one byte per voxel instead of retaining
+            # the model's larger floating-point mask representation.
+            self._mask_undo_stack.append(mask > 0.5)
+            if len(self._mask_undo_stack) > 10:
+                del self._mask_undo_stack[0]
+            self._set_mask_undo_available()
+        plane = stroke["plane"]
+        index = int(stroke["slice_index"])
+        radius = max(1, int(stroke["radius"]))
+        final = bool(stroke.get("final", False))
+
+        if plane == "sagittal":
+            view = mask[index, :, :]
+        elif plane == "coronal":
+            view = mask[:, index, :]
+        else:
+            view = mask[:, :, index]
+
+        rows, cols = view.shape
+        yy, xx = np.ogrid[:rows, :cols]
+        points = stroke.get("points", [])
+        # Interpolate between sampled mouse positions so fast drags make a
+        # continuous stroke rather than a row of disconnected circles.
+        dense_points = []
+        for point_index, (x, y) in enumerate(points):
+            if point_index == 0:
+                dense_points.append((x, y))
+                continue
+            px, py = points[point_index - 1]
+            steps = max(abs(x - px), abs(y - py), 1)
+            dense_points.extend(
+                (int(round(px + (x - px) * step / steps)),
+                 int(round(py + (y - py) * step / steps)))
+                for step in range(1, steps + 1)
+            )
+        for x, y in dense_points:
+            if 0 <= x < cols and 0 <= y < rows:
+                disk = (xx - x) ** 2 + (yy - y) ** 2 <= radius ** 2
+                view[disk] = 0.0
+
+        self._committed_probs = None
+        self._preview_mask = None
+        self._set_sam_preview_available(False)
+        if final:
+            # Synchronize 2D immediately and build expensive 3D surfaces on
+            # the worker thread, using the same fast path as Undo.
+            self._start_mask_refresh(mask)
+        else:
+            active_panel = next(
+                (panel for panel in self.center_panels if panel.plane == plane), None
+            )
+            if active_panel is not None:
+                active_panel.set_mask(mask)
+
+    def on_mask_undo(self):
+        """Restore the mask as it was before the most recent eraser stroke."""
+        if not self._mask_undo_stack or self._display_volume is None:
+            return
+        self._committed_mask = self._mask_undo_stack.pop().astype(np.float32)
+        self._committed_probs = None
+        self._preview_mask = None
+        self._set_sam_preview_available(False)
+        self._start_mask_refresh(self._committed_mask)
+
+    def _start_mask_refresh(self, corrected_mask: np.ndarray):
+        """Show a corrected mask now and refresh component/3D data off-thread."""
+        if self._display_volume is None or self._display_affine is None:
+            return
+
+        # Give immediate feedback first. Connected-component analysis and 3D
+        # surface extraction are deliberately moved to the worker below.
+        self._mask_revision += 1
+        revision = self._mask_revision
+        mask = corrected_mask.copy()
+        volume = self._display_volume.copy()
+        affine = self._display_affine.copy()
+        for panel in self.center_panels:
+            panel.set_mask(self._committed_mask)
+            panel.enable_mask_editing(False)
+        voxel_vol_cm3 = self._voxel_volume_cm3(affine)
+        self.patients_record_panel.set_volume(float(mask.sum()) * voxel_vol_cm3)
+        self.busy_bar.show()
+
+        # A prior surface build cannot be cancelled safely. Keep the newly
+        # restored 2D mask visible now and queue its 3D refresh; the old result
+        # is rejected by its revision number below.
+        if self._mask_refresh_in_progress:
+            self._pending_mask_refresh = True
+            self._set_mask_undo_available()
+            return
+
+        def job():
+            labels, _components, color_map = self._label_tumor_components(
+                mask, None, voxel_vol_cm3
+            )
+            volume_3d, mask_3d, spacing = _prepare_3d(volume, mask, affine)
+            has_tumor = bool(np.any(mask_3d))
+            tumor_fig = build_tumor_figure(mask_3d, spacing) if has_tumor else None
+            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing)
+            return {
+                "mask": mask,
+                "labels": labels,
+                "color_map": color_map,
+                "tumor_fig": tumor_fig,
+                "brain_fig": brain_fig,
+                "revision": revision,
+            }
+
+        started = self._start_background(
+            job, self._on_mask_refresh_ready, self._on_mask_refresh_failed
+        )
+        self._mask_refresh_in_progress = started
+        if not started:
+            self.busy_bar.hide()
+            for panel in self.center_panels:
+                panel.enable_mask_editing(True)
+        self._set_mask_undo_available()
+
+    def _on_mask_refresh_ready(self, result: dict):
+        """Finish a deferred component and 3D refresh after an edit."""
+        if result["revision"] == self._mask_revision:
+            for panel in self.center_panels:
+                panel.set_refined_detection(
+                    result["mask"], result["labels"], result["color_map"]
+                )
+                panel.enable_mask_editing(True)
+            if result["tumor_fig"] is None:
+                self.tumor_3d_panel.clear_figure()
+            else:
+                self.tumor_3d_panel.set_figure(result["tumor_fig"])
+            self.brain_3d_panel.set_figure(result["brain_fig"])
+        self.busy_bar.hide()
+        self._busy = False
+        self._mask_refresh_in_progress = False
+        self._set_mask_undo_available()
+
+    def _on_mask_refresh_failed(self, message: str):
+        # The restored 2D mask remains valid even if optional 3D rendering
+        # fails, so keep it and simply re-enable editing.
+        self.busy_bar.hide()
+        self._busy = False
+        self._mask_refresh_in_progress = False
+        for panel in self.center_panels:
+            panel.enable_mask_editing(True)
+        self._set_mask_undo_available()
+        QMessageBox.warning(self, "3D mask refresh failed", message)
 
     def on_run_sam_refinement(self, prompt: dict):
         if self._busy or self._display_volume is None:
@@ -2794,6 +3187,8 @@ class MainWindow(QMainWindow):
         self._committed_mask = self._preview_mask.copy()
         self._committed_probs = None
         self._preview_mask = None
+        self._mask_undo_stack.clear()
+        self._set_mask_undo_available()
         self._set_sam_preview_available(False)
         for panel in self.center_panels:
             panel.clear_sam_prompts()
@@ -2986,6 +3381,8 @@ class MainWindow(QMainWindow):
         self._committed_mask = None
         self._committed_probs = None
         self._preview_mask = None
+        self._mask_undo_stack.clear()
+        self._set_mask_undo_available()
         self._volume_transform = None
         self._set_sam_available(False)
         self._set_sam_preview_available(False)
