@@ -1,0 +1,25 @@
+{
+  "patients": 38,
+  "split": "Labeled Training holdout; seed 42; same patients as Step 1",
+  "data_root": "BraTS-PEDs-v1",
+  "calibration_cases": 16,
+  "calibration_source": "Training subset only",
+  "threshold": 0.5,
+  "target_shape": [
+    96,
+    96,
+    96
+  ],
+  "pytorch_mean_dice": 0.8484131865789473,
+  "onnx_fp32_mean_dice": 0.8484131866379788,
+  "onnx_int8_mean_dice": 0.8491203063412717,
+  "int8_minus_pytorch_mean_dice": 0.0007071197623242902,
+  "max_abs_fp32_minus_pytorch_dice": 4.913482620771958e-09,
+  "checkpoint_sha256": "2a6fa37121ddbf493529c43b2b04ccb3100d28a34ae3716e5b8a6868909d80ca",
+  "onnx_fp32_bytes": 5675863,
+  "onnx_int8_bytes": 1740471,
+  "quantize_linear_nodes": 30,
+  "quantization": "Static QDQ, signed INT8 activations and weights, per-channel Conv weights",
+  "inference_provider": "CPUExecutionProvider",
+  "elapsed_seconds": 432.63629180000135
+}

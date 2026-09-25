@@ -1,0 +1,22 @@
+{
+  "model": "hayyi_radiomics",
+  "checkpoint": "hayyi_best_model.pth",
+  "data_root": "BraTS-PEDs-v1",
+  "split": "Training holdout",
+  "seed": 42,
+  "patients": 38,
+  "mean_dice": 0.8419796663679575,
+  "threshold": 0.5,
+  "target_shape": [
+    96,
+    96,
+    96
+  ],
+  "radiomics_features": 386,
+  "radiomics_csv": "hayyi_radiomics_features.csv",
+  "radiomics_stats": "radiomics_stats.json",
+  "radiomics_roi": "whole tumor from ground-truth mask",
+  "radiomics_note": "Ground-truth ROI leaks validation mask information into segmentation.",
+  "device": "cpu",
+  "elapsed_seconds": 133.6224482999969
+}

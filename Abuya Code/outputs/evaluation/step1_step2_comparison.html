@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brain Tumor Segmentation — Model Comparison</title>
+<style>
+  :root { color-scheme: light; --ink:#18212b; --muted:#536271; --line:#dce3e8; --paper:#fff; --wash:#f4f7f9; --accent:#174c6b; --good:#14643f; --bad:#9d422b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--wash); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:1180px; margin:0 auto; padding:42px 28px 72px; background:var(--paper); }
+  h1 { margin:0 0 8px; font-size:30px; line-height:1.2; letter-spacing:-.02em; }
+  h2 { margin:44px 0 12px; font-size:20px; border-top:1px solid var(--line); padding-top:26px; }
+  h3 { margin:22px 0 7px; font-size:16px; }
+  p { margin:8px 0; }
+  .eyebrow { color:var(--accent); font-weight:700; font-size:12px; letter-spacing:.09em; text-transform:uppercase; }
+  .lede { max-width:860px; color:var(--muted); font-size:17px; }
+  .facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0; margin:28px 0; border-block:1px solid var(--line); }
+  .fact { padding:17px 20px 17px 0; }
+  .fact + .fact { border-left:1px solid var(--line); padding-left:20px; }
+  .fact span { display:block; color:var(--muted); font-size:13px; }
+  .fact strong { display:block; font-size:23px; font-variant-numeric:tabular-nums; }
+  .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:5px; }
+  table { border-collapse:collapse; width:100%; min-width:860px; }
+  th,td { padding:9px 11px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+  th { background:#eaf0f4; color:#263746; font-size:12px; position:sticky; top:0; }
+  tbody tr:nth-child(even) { background:#fafcfd; }
+  tbody tr:last-child td { border-bottom:0; }
+  .number { text-align:right; font-variant-numeric:tabular-nums; }
+  .positive { color:var(--good); }
+  .negative { color:var(--bad); }
+  .neutral { color:var(--muted); }
+  .callout { border-left:4px solid var(--accent); background:#edf3f6; padding:12px 17px; margin:18px 0; }
+  .note { color:var(--muted); font-size:13px; }
+  .controls { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:15px 0; }
+  input { width:280px; max-width:100%; padding:9px 11px; border:1px solid #a9b8c3; border-radius:4px; font:inherit; }
+  .legend { display:flex; gap:18px; flex-wrap:wrap; color:var(--muted); font-size:12px; }
+  ul { padding-left:21px; }
+  li { margin:8px 0; }
+  footer { margin-top:32px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+  @media (max-width:700px) { main { padding:24px 16px; } .facts { grid-template-columns:1fr; } .fact + .fact { border-left:0; border-top:1px solid var(--line); padding-left:0; } }
+  @media print { body { background:white; } main { max-width:none; padding:0; } input,.controls { display:none; } th { position:static; } tr { break-inside:avoid; } }
+</style>
+</head>
+<body><main>
+<div class="eyebrow">BraTS-PEDs · Lecturer comparison</div>
+<h1>Brain tumor segmentation: model and ONNX comparison</h1>
+<p class="lede">Whole-tumor Dice scores for the same 38 labeled patients held out from the Training folder. Higher Dice means more overlap with the reference tumor mask.</p>
+<div class="facts">
+  <div class="fact"><span>Your original model · mean Dice</span><strong>0.848413</strong></div>
+  <div class="fact"><span>Hayyi model · mean Dice</span><strong>0.841980</strong></div>
+  <div class="fact"><span>Your quantized ONNX model · mean Dice</span><strong>0.849120</strong></div>
+</div>
+
+<h2>Conclusions</h2>
+<ul>
+  <li>Your original model averaged <strong>0.848413</strong> Dice and Hayyi's averaged <strong>0.841980</strong>. The mean difference is <strong>+0.006434</strong> in your model's favor; yours scored higher for 24 patients and Hayyi's for 14.</li>
+  <li>After ONNX INT8 quantization, your model averaged <strong>0.849120</strong> Dice, a mean change of <strong>+0.000707</strong> from your original model. Quantization raised the score for 19 patients and lowered it for 19; the small positive average does not mean every patient improved.</li>
+  <li>The regular ONNX export averaged <strong>0.848413</strong> Dice and reproduced the original PyTorch results (maximum per-patient Dice difference below 0.00000001). The ONNX file decreased from 5.68 MB to 1.74 MB, about <strong>69.3%</strong> smaller.</li>
+</ul>
+<div class="callout"><strong>Important interpretation:</strong> Hayyi's supplied radiomics values for these patients were calculated using their ground-truth tumor masks. Those labels enter Hayyi's model as input, so the Step 1 comparison is not a blind or fully fair test of generalization. Report both measured means, but do not claim one model is conclusively better based on this comparison.</div>
+
+<h2>Average Dice comparison</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Evaluation</th><th>Model</th><th class="number">Patients</th><th class="number">Mean Dice</th><th>Interpretation</th></tr></thead>
+<tbody>
+<tr><td>Step 1</td><td>Your PyTorch checkpoint</td><td class="number">38</td><td class="number">0.848413</td><td>Reference for both comparisons</td></tr>
+<tr><td>Step 1</td><td>Hayyi + radiomics</td><td class="number">38</td><td class="number">0.841980</td><td>Radiomics derived from reference masks</td></tr>
+<tr><td>Step 2</td><td>Your regular ONNX export</td><td class="number">38</td><td class="number">0.848413</td><td>Checks export agreement</td></tr>
+<tr><td>Step 2</td><td>Your quantized ONNX model</td><td class="number">38</td><td class="number">0.849120</td><td>Static INT8 quantization of convolution layers</td></tr>
+</tbody></table></div>
+
+<h2>Patient-by-patient results</h2>
+<p class="note">All columns use Dice scores from 0 to 1. Difference columns are signed: positive means your model scored higher than Hayyi's, or INT8 scored higher than your original model.</p>
+<div class="controls"><label for="patient-search">Find patient</label><input id="patient-search" type="search" placeholder="e.g. BraTS-PED-00008-000"><span class="legend">Green = positive difference · Brown = negative difference</span></div>
+<div class="table-wrap"><table id="patient-table">
+<thead><tr><th>Patient ID</th><th class="number">Your original</th><th class="number">Hayyi</th><th class="number">Yours − Hayyi</th><th class="number">ONNX FP32</th><th class="number">ONNX INT8</th><th class="number">INT8 − original</th></tr></thead>
+<tbody><tr><td class="">BraTS-PED-00008-000</td><td class="number">0.790679</td><td class="number">0.703131</td><td class="number positive">+0.087548</td><td class="number">0.790679</td><td class="number">0.786769</td><td class="number negative">-0.003910</td></tr>
+<tr><td class="">BraTS-PED-00028-000</td><td class="number">0.808736</td><td class="number">0.853968</td><td class="number negative">-0.045233</td><td class="number">0.808736</td><td class="number">0.811373</td><td class="number positive">+0.002637</td></tr>
+<tr><td class="">BraTS-PED-00035-000</td><td class="number">0.904791</td><td class="number">0.917029</td><td class="number negative">-0.012238</td><td class="number">0.904791</td><td class="number">0.906484</td><td class="number positive">+0.001693</td></tr>
+<tr><td class="">BraTS-PED-00036-000</td><td class="number">0.876595</td><td class="number">0.876135</td><td class="number positive">+0.000460</td><td class="number">0.876595</td><td class="number">0.875923</td><td class="number negative">-0.000672</td></tr>
+<tr><td class="">BraTS-PED-00038-000</td><td class="number">0.866182</td><td class="number">0.852347</td><td class="number positive">+0.013835</td><td class="number">0.866182</td><td class="number">0.868795</td><td class="number positive">+0.002614</td></tr>
+<tr><td class="">BraTS-PED-00040-000</td><td class="number">0.815138</td><td class="number">0.858595</td><td class="number negative">-0.043457</td><td class="number">0.815138</td><td class="number">0.819616</td><td class="number positive">+0.004478</td></tr>
+<tr><td class="">BraTS-PED-00041-000</td><td class="number">0.838666</td><td class="number">0.830921</td><td class="number positive">+0.007745</td><td class="number">0.838666</td><td class="number">0.838251</td><td class="number negative">-0.000415</td></tr>
+<tr><td class="">BraTS-PED-00048-000</td><td class="number">0.895893</td><td class="number">0.880036</td><td class="number positive">+0.015857</td><td class="number">0.895893</td><td class="number">0.894432</td><td class="number negative">-0.001461</td></tr>
+<tr><td class="">BraTS-PED-00053-000</td><td class="number">0.880213</td><td class="number">0.861444</td><td class="number positive">+0.018768</td><td class="number">0.880213</td><td class="number">0.876275</td><td class="number negative">-0.003938</td></tr>
+<tr><td class="">BraTS-PED-00078-000</td><td class="number">0.924075</td><td class="number">0.931496</td><td class="number negative">-0.007421</td><td class="number">0.924075</td><td class="number">0.922235</td><td class="number negative">-0.001840</td></tr>
+<tr><td class="">BraTS-PED-00079-000</td><td class="number">0.899912</td><td class="number">0.910297</td><td class="number negative">-0.010385</td><td class="number">0.899912</td><td class="number">0.901252</td><td class="number positive">+0.001340</td></tr>
+<tr><td class="">BraTS-PED-00091-000</td><td class="number">0.799769</td><td class="number">0.873322</td><td class="number negative">-0.073552</td><td class="number">0.799769</td><td class="number">0.810120</td><td class="number positive">+0.010350</td></tr>
+<tr><td class="">BraTS-PED-00094-000</td><td class="number">0.888671</td><td class="number">0.881587</td><td class="number positive">+0.007083</td><td class="number">0.888671</td><td class="number">0.893032</td><td class="number positive">+0.004362</td></tr>
+<tr><td class="">BraTS-PED-00109-000</td><td class="number">0.921068</td><td class="number">0.902776</td><td class="number positive">+0.018292</td><td class="number">0.921068</td><td class="number">0.924328</td><td class="number positive">+0.003261</td></tr>
+<tr><td class="">BraTS-PED-00124-000</td><td class="number">0.913354</td><td class="number">0.920349</td><td class="number negative">-0.006994</td><td class="number">0.913354</td><td class="number">0.915061</td><td class="number positive">+0.001707</td></tr>
+<tr><td class="">BraTS-PED-00129-000</td><td class="number">0.902089</td><td class="number">0.886004</td><td class="number positive">+0.016085</td><td class="number">0.902089</td><td class="number">0.901926</td><td class="number negative">-0.000163</td></tr>
+<tr><td class="">BraTS-PED-00130-000</td><td class="number">0.900397</td><td class="number">0.914333</td><td class="number negative">-0.013936</td><td class="number">0.900397</td><td class="number">0.901521</td><td class="number positive">+0.001124</td></tr>
+<tr><td class="">BraTS-PED-00131-000</td><td class="number">0.784846</td><td class="number">0.845028</td><td class="number negative">-0.060182</td><td class="number">0.784846</td><td class="number">0.807160</td><td class="number positive">+0.022314</td></tr>
+<tr><td class="">BraTS-PED-00137-000</td><td class="number">0.814561</td><td class="number">0.819675</td><td class="number negative">-0.005114</td><td class="number">0.814561</td><td class="number">0.810020</td><td class="number negative">-0.004541</td></tr>
+<tr><td class="">BraTS-PED-00139-000</td><td class="number">0.896714</td><td class="number">0.885696</td><td class="number positive">+0.011017</td><td class="number">0.896714</td><td class="number">0.896403</td><td class="number negative">-0.000310</td></tr>
+<tr><td class="">BraTS-PED-00145-000</td><td class="number">0.291030</td><td class="number">0.171800</td><td class="number positive">+0.119230</td><td class="number">0.291030</td><td class="number">0.270367</td><td class="number negative">-0.020663</td></tr>
+<tr><td class="">BraTS-PED-00156-000</td><td class="number">0.514691</td><td class="number">0.208242</td><td class="number positive">+0.306449</td><td class="number">0.514691</td><td class="number">0.496770</td><td class="number negative">-0.017921</td></tr>
+<tr><td class="">BraTS-PED-00158-000</td><td class="number">0.952954</td><td class="number">0.950641</td><td class="number positive">+0.002313</td><td class="number">0.952954</td><td class="number">0.952682</td><td class="number negative">-0.000272</td></tr>
+<tr><td class="">BraTS-PED-00161-000</td><td class="number">0.904864</td><td class="number">0.897014</td><td class="number positive">+0.007850</td><td class="number">0.904864</td><td class="number">0.902142</td><td class="number negative">-0.002722</td></tr>
+<tr><td class="">BraTS-PED-00163-000</td><td class="number">0.677607</td><td class="number">0.696577</td><td class="number negative">-0.018969</td><td class="number">0.677607</td><td class="number">0.671521</td><td class="number negative">-0.006086</td></tr>
+<tr><td class="">BraTS-PED-00168-000</td><td class="number">0.884201</td><td class="number">0.874825</td><td class="number positive">+0.009375</td><td class="number">0.884201</td><td class="number">0.882787</td><td class="number negative">-0.001414</td></tr>
+<tr><td class="">BraTS-PED-00173-000</td><td class="number">0.857866</td><td class="number">0.852613</td><td class="number positive">+0.005254</td><td class="number">0.857866</td><td class="number">0.858988</td><td class="number positive">+0.001121</td></tr>
+<tr><td class="">BraTS-PED-00182-000</td><td class="number">0.872625</td><td class="number">0.831660</td><td class="number positive">+0.040965</td><td class="number">0.872625</td><td class="number">0.873394</td><td class="number positive">+0.000769</td></tr>
+<tr><td class="">BraTS-PED-00184-000</td><td class="number">0.918717</td><td class="number">0.911634</td><td class="number positive">+0.007082</td><td class="number">0.918717</td><td class="number">0.919013</td><td class="number positive">+0.000296</td></tr>
+<tr><td class="">BraTS-PED-00191-000</td><td class="number">0.953188</td><td class="number">0.945971</td><td class="number positive">+0.007217</td><td class="number">0.953188</td><td class="number">0.951049</td><td class="number negative">-0.002139</td></tr>
+<tr><td class="">BraTS-PED-00199-000</td><td class="number">0.925738</td><td class="number">0.906888</td><td class="number positive">+0.018850</td><td class="number">0.925738</td><td class="number">0.926165</td><td class="number positive">+0.000427</td></tr>
+<tr><td class="">BraTS-PED-00207-000</td><td class="number">0.911926</td><td class="number">0.907029</td><td class="number positive">+0.004896</td><td class="number">0.911926</td><td class="number">0.911982</td><td class="number positive">+0.000056</td></tr>
+<tr><td class="">BraTS-PED-00220-000</td><td class="number">0.912888</td><td class="number">0.911274</td><td class="number positive">+0.001614</td><td class="number">0.912888</td><td class="number">0.913911</td><td class="number positive">+0.001023</td></tr>
+<tr><td class="">BraTS-PED-00221-000</td><td class="number">0.913573</td><td class="number">0.905649</td><td class="number positive">+0.007924</td><td class="number">0.913573</td><td class="number">0.911004</td><td class="number negative">-0.002569</td></tr>
+<tr><td class="">BraTS-PED-00232-000</td><td class="number">0.936128</td><td class="number">0.923805</td><td class="number positive">+0.012323</td><td class="number">0.936128</td><td class="number">0.937630</td><td class="number positive">+0.001502</td></tr>
+<tr><td class="">BraTS-PED-00242-000</td><td class="number">0.847283</td><td class="number">0.879646</td><td class="number negative">-0.032364</td><td class="number">0.847283</td><td class="number">0.846489</td><td class="number negative">-0.000794</td></tr>
+<tr><td class="">BraTS-PED-00259-000</td><td class="number">0.911009</td><td class="number">0.915168</td><td class="number negative">-0.004159</td><td class="number">0.911009</td><td class="number">0.909799</td><td class="number negative">-0.001211</td></tr>
+<tr><td class="">BraTS-PED-00261-000</td><td class="number">0.731064</td><td class="number">0.900621</td><td class="number negative">-0.169557</td><td class="number">0.731064</td><td class="number">0.769902</td><td class="number positive">+0.038839</td></tr></tbody>
+</table></div>
+
+<h2>Methods and notes for presentation</h2>
+<ul>
+  <li><strong>Patient set:</strong> 38 labeled cases held out from the dataset's Training folder using seed 42 and a 15% split. The official Validation folder has MRI scans but no segmentation masks, so Dice cannot be calculated there from the available files.</li>
+  <li><strong>Dice definition:</strong> Binary whole tumor (segmentation label &gt; 0), four MRI modalities, resized to 96 × 96 × 96 voxels, with a 0.5 prediction threshold.</li>
+  <li><strong>Quantization:</strong> The saved checkpoint was exported to ONNX, then calibrated with 16 patients from the training subset only. Convolution layers use signed INT8 QDQ quantization; other operations may remain in floating point. Inference used ONNX Runtime's CPU provider. No retraining was performed.</li>
+  <li><strong>Scope:</strong> The smaller ONNX file and Dice result are measured here. Inference speed and performance on a separate labeled test set were not measured.</li>
+</ul>
+<footer>Sources: paired_patient_dice.csv, paired_dice_summary.json, onnx_patient_dice.csv, onnx_dice_summary.json. This file is self-contained and can be opened in a browser or printed to PDF.</footer>
+</main>
+<script>
+const search = document.getElementById('patient-search');
+search.addEventListener('input', () => {
+  const needle = search.value.trim().toLowerCase();
+  for (const row of document.querySelectorAll('#patient-table tbody tr')) {
+    row.hidden = !row.cells[0].textContent.toLowerCase().includes(needle);
+  }
+});
+</script>
+</body></html>

@@ -1,0 +1,10 @@
+{
+  "patients": 38,
+  "split": "38 labeled patients held out from Training; seed 42",
+  "own_mean_dice": 0.8484131866379788,
+  "hayyi_mean_dice": 0.8419796663679575,
+  "own_minus_hayyi_mean_dice": 0.006433520270021309,
+  "own_higher_cases": 24,
+  "hayyi_higher_cases": 14,
+  "radiomics_caveat": "Hayyi's supplied radiomics CSV was extracted with ground-truth whole-tumor masks on the held-out patients, which leaks validation label information."
+}
