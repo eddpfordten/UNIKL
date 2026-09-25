@@ -10,7 +10,6 @@ from typing import Optional
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
-from ipywidgets import IntSlider, interact
 
 from brain_tumor_seg.utils.mask_analysis import (
     ComponentAnalysis,
@@ -160,6 +159,8 @@ def show_components_with_slider(
 
     Labelling runs once up front, so dragging the sliders only redraws.
     """
+    from ipywidgets import IntSlider, interact
+
     volume = to_3d(image)
     analysis = analyze_components(mask, connectivity=connectivity, min_voxels=min_voxels)
     n_lr, n_ap, n_si = analysis.labels.shape

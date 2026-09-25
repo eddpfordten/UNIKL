@@ -7,7 +7,6 @@ from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-from ipywidgets import IntSlider, interact
 
 
 class VolumeVisualizer:
@@ -102,6 +101,8 @@ class VolumeVisualizer:
         """
         Launch interactive sliders in Jupyter to browse each anatomical plane.
         """
+        from ipywidgets import IntSlider, interact
+
         def update(axial_idx: int, coronal_idx: int, sagittal_idx: int):
             plt.close("all")
             self.plot_slices(axial_idx, coronal_idx, sagittal_idx)

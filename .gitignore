@@ -11,5 +11,7 @@ venv/
 Abuya Code/vendor/
 Abuya Code/outputs/checkpoints/medsam2/
 Abuya Code/outputs/refined_masks/
+Abuya Code/build_exe/
+Abuya Code/dist/
 .DS_Store
 Thumbs.db
