@@ -49,15 +49,9 @@ also be set with `BRATS_DATA_ROOT`; the current `G:` Google Drive shortcut is
 used when available. The existing executable is a snapshot of the earlier UI
 and is not updated by source edits.
 
-The **Run with** selector lets you try Zaq or Hayyi in the source viewer. Zaq
-remains the default. Hayyi requires the local `outputs/evaluation/hayyi_best_model.pth`,
-`hayyi_radiomics_features.csv`, and
-`hayyi_branch/Abuya Code/outputs/checkpoints/radiomics_stats.json` files.
-The supplied radiomics rows cover known training cases and were extracted
-using their true tumor masks. The viewer refuses to run Hayyi for a case
-without a matching row; its displayed result is a demonstration, not a
-blind prediction. These large or teammate-provided assets are local and are
-not included in Git or the current executable.
+The source viewer runs Zaq's PyTorch model for segmentation and its survival
+estimate. Hayyi and the quantized ONNX model remain available as evaluation
+artifacts; they are not selectable in the viewer.
 
 ## Evaluation results
 
@@ -72,9 +66,20 @@ the provided `Validation` folder has no masks for calculating Dice.
 
 The local executable is `Abuya Code/dist/BrainTumorViewer.exe`. It is a large
 one-file build and is excluded from Git. To rebuild or check it, follow
-[`packaging/BUILD.md`](Abuya%20Code/packaging/BUILD.md). The desktop viewer
-uses the PyTorch checkpoint; the quantized ONNX model is an evaluation result,
-not the model loaded by this UI.
+[`packaging/BUILD.md`](Abuya%20Code/packaging/BUILD.md). The current build
+uses Zaq's model only. The previous executable is kept as
+`Abuya Code/dist/BrainTumorViewer.previous.exe`.
+
+To share the app, send the current `BrainTumorViewer.exe` to a Windows x64 PC.
+The recipient does not need Python, but must supply their own four-modality
+BraTS patient folder. The MRI dataset and survival metadata TSV are not bundled;
+without the TSV, the report cannot show recorded survival. MedSAM refinement
+requires a compatible NVIDIA GPU and driver. Zaq segmentation can use the CPU,
+although it will be slower. Allow several GB of free space for one-file
+extraction on launch.
+For recorded survival on another PC, place the TSV beside the dataset's
+`Training` and `Validation` folders, then set `BRATS_DATA_ROOT` to that dataset
+root before launching the EXE.
 
 ## Legacy reference files
 

@@ -28,7 +28,7 @@ python -m PyInstaller --noconfirm --distpath dist --workpath build_exe packaging
 
 The executable runs Zaq's existing PyTorch checkpoint. The smaller ONNX model
 from Step 2 is an evaluation artifact and is not used by this desktop viewer.
-The current one-file build is about 2.96 GB and can take several minutes to
+The current one-file build is about 2.81 GB and can take several minutes to
 unpack on each launch. Keep enough free disk space in the user's temporary
 directory for extraction.
 MedSAM2 refinement requires an NVIDIA CUDA GPU; the regular U-Net path can run
@@ -45,7 +45,8 @@ one-file executable exits.
 .\dist\BrainTumorViewer.exe --smoke-ui
 ```
 
-The first command loads both model checkpoints and records the result in JSON.
+The first command loads Zaq's checkpoint and the MedSAM checkpoint and records
+the result in JSON.
 The second opens the UI briefly and closes it automatically. A clean Windows
 machine still needs a compatible NVIDIA driver for MedSAM2, and the executable
 should be checked on the actual challenge laptop before presentation.

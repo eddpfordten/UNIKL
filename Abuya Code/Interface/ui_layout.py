@@ -55,7 +55,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QFileDialog, QSizePolicy, QSlider, QMessageBox,
-    QProgressBar, QStackedLayout, QScrollArea, QGridLayout, QComboBox,
+    QProgressBar, QStackedLayout, QScrollArea, QGridLayout,
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEnginePage
@@ -76,7 +76,6 @@ from brain_tumor_seg.data.dataset import _normalize
 from brain_tumor_seg.data.survival import load_survival_days, load_survival_stats
 from brain_tumor_seg.evaluation import predict_survival_days
 from brain_tumor_seg.models import MultiTaskUNet3D
-from brain_tumor_seg.models.hayyi import HayyiMultiTaskUNet3D, load_case_radiomics
 from brain_tumor_seg.models.multitask import run_model, split_model_outputs
 from brain_tumor_seg.sam import MedSAM2Refiner, VolumeTransform
 from brain_tumor_seg.sam.transforms import prompt_to_rotated_xy, rotated_to_prompt_xy
@@ -269,13 +268,6 @@ def _resolve_checkpoint() -> Path:
 
 
 MODEL_PATH = _resolve_checkpoint()
-HAYYI_ASSETS = _PROJECT_ROOT / "outputs" / "evaluation"
-HAYYI_CHECKPOINT = HAYYI_ASSETS / "hayyi_best_model.pth"
-HAYYI_RADIOMICS_CSV = HAYYI_ASSETS / "hayyi_radiomics_features.csv"
-HAYYI_RADIOMICS_STATS = (
-    HAYYI_ASSETS / "hayyi_branch" / "Abuya Code" / "outputs"
-    / "checkpoints" / "radiomics_stats.json"
-)
 INFERENCE_SIZE = TARGET_SHAPE
 # 3D marching cubes on a native 240^3 volume stalls the UI; downsample first.
 RENDER_MAX_DIM = 96
@@ -290,7 +282,6 @@ EMBEDDED_TRAINING_DIR = Path(
 )
 
 _MODEL_CACHE = {"model": None, "device": None}
-_HAYYI_MODEL_CACHE = {"model": None, "device": None}
 
 
 def _default_browse_dir() -> str:
@@ -383,22 +374,6 @@ def _ensure_model():
     model.eval()
     _MODEL_CACHE["model"] = model
     _MODEL_CACHE["device"] = device
-    return model, device
-
-
-def _ensure_hayyi_model():
-    cached = _HAYYI_MODEL_CACHE["model"]
-    if cached is not None:
-        return cached, _HAYYI_MODEL_CACHE["device"]
-    if not HAYYI_CHECKPOINT.is_file():
-        raise FileNotFoundError(f"Hayyi checkpoint not found: {HAYYI_CHECKPOINT}")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = HayyiMultiTaskUNet3D(in_channels=4, out_channels=1, radiomics_dim=386)
-    state = torch.load(HAYYI_CHECKPOINT, map_location="cpu", weights_only=True)
-    model.load_state_dict(state, strict=True)
-    model.to(device).eval()
-    _HAYYI_MODEL_CACHE["model"] = model
-    _HAYYI_MODEL_CACHE["device"] = device
     return model, device
 
 
@@ -3375,28 +3350,12 @@ class MainWindow(QMainWindow):
         drop_row.addWidget(self.run_seg_btn, 0, Qt.AlignTop)
         left.addLayout(drop_row)
 
-        model_row = QHBoxLayout()
-        model_label = QLabel("Run with")
-        model_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; border: none;")
-        self.model_picker = QComboBox()
-        self.model_picker.addItem("Zaq", "zaq")
-        self.model_picker.addItem("Hayyi + radiomics", "hayyi")
-        self.model_picker.setToolTip("Choose which trained segmentation model to run")
-        model_row.addWidget(model_label)
-        model_row.addWidget(self.model_picker, 1)
-        left.addLayout(model_row)
-        self.model_note = QLabel("")
-        self.model_note.setWordWrap(True)
-        self.model_note.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 9px; border: none;")
-        left.addWidget(self.model_note)
         self.model_result_label = QLabel("No model run for this patient")
         self.model_result_label.setWordWrap(True)
         self.model_result_label.setStyleSheet(
             f"color: {ACCENT_AMBER_SOFT}; font-size: 9px; border: none;"
         )
         left.addWidget(self.model_result_label)
-        self.model_picker.currentIndexChanged.connect(self._update_model_note)
-        self._update_model_note()
 
         self.busy_bar = QProgressBar()
         self.busy_bar.setRange(0, 0)  # indeterminate — pulses while active
@@ -3509,15 +3468,6 @@ class MainWindow(QMainWindow):
         for panel in self.right_panels:
             panel.select_tumor(component_id)
 
-    def _update_model_note(self, _index=None):
-        if self.model_picker.currentData() == "hayyi":
-            self.model_note.setText(
-                "Hayyi uses saved radiomics from the true tumor mask. "
-                "Matching training cases only; demonstration result."
-            )
-        else:
-            self.model_note.setText("Zaq uses the MRI images only.")
-
     def toggle_maximize(self, panel):
         """Clicking a panel's maximize button hides every other panel (and
         the now-empty side column) so it fills the available space; clicking
@@ -3597,20 +3547,6 @@ class MainWindow(QMainWindow):
 
         folder_path = self.current_folder
         survival_stats = self._survival_stats
-        model_key = self.model_picker.currentData()
-        radiomics = None
-        if model_key == "hayyi":
-            try:
-                for asset in (HAYYI_CHECKPOINT, HAYYI_RADIOMICS_CSV, HAYYI_RADIOMICS_STATS):
-                    if not asset.is_file():
-                        raise FileNotFoundError(f"Hayyi asset not found: {asset}")
-                radiomics = load_case_radiomics(
-                    HAYYI_RADIOMICS_CSV, HAYYI_RADIOMICS_STATS, folder_path.name
-                )
-            except (OSError, KeyError, ValueError) as exc:
-                QMessageBox.warning(self, "Hayyi model unavailable", str(exc))
-                return
-
         self.busy_bar.show()
         self.run_seg_btn.setEnabled(False)
         self._set_2d_loading(True)
@@ -3618,10 +3554,9 @@ class MainWindow(QMainWindow):
         def job():
             modality_paths = MainWindow._find_modality_files(folder_path)
             display_volume, model_input, affine, transform, axcodes = MainWindow._load_and_stack(modality_paths)
-            model, device = _ensure_hayyi_model() if model_key == "hayyi" else _ensure_model()
+            model, device = _ensure_model()
             mask, probs, predicted_days = MainWindow._run_model_static(
-                model, device, model_input, display_volume.shape, survival_stats,
-                radiomics=radiomics,
+                model, device, model_input, display_volume.shape, survival_stats
             )
             volume_3d, mask_3d, spacing = _prepare_3d(display_volume, mask, affine)
             has_tumor = mask_3d is not None and float(np.asarray(mask_3d).sum()) > 0
@@ -3635,7 +3570,6 @@ class MainWindow(QMainWindow):
                 "mask": mask,
                 "probs": probs,
                 "predicted_days": predicted_days,
-                "model_key": model_key,
                 "tumor_fig": tumor_fig,
                 "brain_fig": brain_fig,
             }
@@ -3662,10 +3596,7 @@ class MainWindow(QMainWindow):
         self._axcodes = result.get("axcodes")
         self._update_report(mask, labels, components, voxel_vol_cm3, display_volume)
         self.survival_panel.set_days(result["predicted_days"])
-        self.model_result_label.setText(
-            "Showing Hayyi result (mask-derived radiomics)"
-            if result["model_key"] == "hayyi" else "Showing Zaq result"
-        )
+        self.model_result_label.setText("Showing Zaq result")
         self._display_volume = display_volume
         self._display_affine = affine
         self._volume_transform = result["transform"]
@@ -4184,16 +4115,13 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _run_model_static(model, device, model_input: torch.Tensor, target_shape: tuple,
-                          survival_stats, radiomics: Optional[torch.Tensor] = None):
+                          survival_stats):
         x = model_input.to(device)
         resized = torch.nn.functional.interpolate(
             x, size=INFERENCE_SIZE, mode="trilinear", align_corners=False
         )
         with torch.no_grad():
-            if radiomics is None:
-                outputs = run_model(model, resized)
-            else:
-                outputs = model(resized, radiomics=radiomics.to(device))
+            outputs = run_model(model, resized)
             logits, survival_output = split_model_outputs(outputs)
             probs = torch.sigmoid(logits)
         probs_native = torch.nn.functional.interpolate(
@@ -4203,17 +4131,12 @@ class MainWindow(QMainWindow):
         mask = (probs_np > 0.5).astype(np.float32)
         predicted_days = None
         if survival_stats is not None:
-            if radiomics is not None and survival_output is not None:
-                predicted_days = float(
-                    survival_stats.to_days(survival_output.reshape(-1)[0].cpu().numpy())
+            try:
+                predicted_days = predict_survival_days(
+                    model, resized.squeeze(0), device, survival_stats
                 )
-            else:
-                try:
-                    predicted_days = predict_survival_days(
-                        model, resized.squeeze(0), device, survival_stats
-                    )
-                except AttributeError:
-                    predicted_days = None
+            except AttributeError:
+                predicted_days = None
         return mask, probs_np, predicted_days
 
     def _run_model(self, model, model_input: torch.Tensor, target_shape: tuple):
