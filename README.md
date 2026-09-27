@@ -49,6 +49,16 @@ also be set with `BRATS_DATA_ROOT`; the current `G:` Google Drive shortcut is
 used when available. The existing executable is a snapshot of the earlier UI
 and is not updated by source edits.
 
+The **Run with** selector lets you try Zaq or Hayyi in the source viewer. Zaq
+remains the default. Hayyi requires the local `outputs/evaluation/hayyi_best_model.pth`,
+`hayyi_radiomics_features.csv`, and
+`hayyi_branch/Abuya Code/outputs/checkpoints/radiomics_stats.json` files.
+The supplied radiomics rows cover known training cases and were extracted
+using their true tumor masks. The viewer refuses to run Hayyi for a case
+without a matching row; its displayed result is a demonstration, not a
+blind prediction. These large or teammate-provided assets are local and are
+not included in Git or the current executable.
+
 ## Evaluation results
 
 Open the checked [Step 1 and Step 2 comparison](Abuya%20Code/outputs/evaluation/step1_step2_comparison.html)
