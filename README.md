@@ -1,35 +1,67 @@
-# UNIKL
-UNIKL Studies
-Assalamualaikum semua mari kita semua
+# UNIKL Brain Tumor Segmentation
 
-## Nice to do
+This repository contains the Abuya Code desktop viewer, segmentation models,
+training notebooks, and the Step 1 and Step 2 Dice comparison. The active app
+is in [`Abuya Code/Interface/ui_layout.py`](Abuya%20Code/Interface/ui_layout.py).
+The older root-level [`ui_layout.py`](ui_layout.py) is a separate standalone
+viewer and remains in place.
 
-Ideas we want to grow into the A.I. Copilot next.
+## Where things are
 
-- 🗂️ **Batch volume load** — drop or pick several patient folders at once, not just one scan.
-- 📋 **Collapsible batch drawer** — a slim panel that lists every loaded volume and tucks away when you do not need it.
-- 🖱️ **Click-to-view cases** — each row in that list opens the matching case in the 2D / 3D viewers.
-- 🎯 **SAM assist** — semi-automated tumor outline with Segment Anything, then refine by hand.
-- 🧠 **Memory diet** — keep large NIfTI stacks and 3D meshes from eating RAM during long sessions.
-- ⬡ **Viewer hive HUD** — a light, irregular honeycomb mark behind each viewer, not a full grid.
-- 🌀 **Idle 3D motion** — a default orbit / pulse animation on the tumor and brain views before any image is loaded.
-- 💾 **Save after segment** — export the overlay, mask, and 3D snapshots once a run finishes.
-- 🧩 **Model picker** — choose which checkpoint / architecture to run before hitting segmentation.
+| Location | Contents |
+| --- | --- |
+| [`Abuya Code/Interface/`](Abuya%20Code/Interface/) | Current PySide6 viewer and its images/icons |
+| [`Abuya Code/brain_tumor_seg/`](Abuya%20Code/brain_tumor_seg/) | Data loading, model, inference, MedSAM2, and visualization code |
+| [`Abuya Code/notebooks/`](Abuya%20Code/notebooks/) | Training notebooks and the saved-results notebook |
+| [`Abuya Code/outputs/checkpoints/`](Abuya%20Code/outputs/checkpoints/) | Zaq checkpoints and survival statistics used by the app |
+| [`Abuya Code/outputs/evaluation/`](Abuya%20Code/outputs/evaluation/) | Checked Dice CSV/JSON results, comparison HTML, ONNX models, and local evaluation assets |
+| [`Abuya Code/outputs/plots/`](Abuya%20Code/outputs/plots/) | Saved training plots |
+| [`Abuya Code/packaging/`](Abuya%20Code/packaging/) | Windows executable build recipe and instructions |
+| [`Abuya Code/tests/`](Abuya%20Code/tests/) | Existing MedSAM2 checks |
+| [`reference/legacy/`](reference/legacy/) | Old standalone reference files that the current app does not load |
 
-## MedSAM2 refinement
+The Google Drive BraTS-PEDs dataset is external to this repository. The
+`Abuya Code/vendor/`, `.venv/`, `build_exe/`, and `dist/` directories are local
+setup or build files. The source code expects the existing notebook, checkpoint,
+and evaluation paths above, so they have not been reorganized.
 
-The desktop viewer exposes the 3D U-Net and MedSAM2 as two independent segmentation models. On Windows, install the pinned official MedSAM2 model and CUDA dependencies with Python 3.12:
+## Open the viewer
+
+From PowerShell in the repository root, use the project environment with the
+packages in `Abuya Code/requirements.txt`:
 
 ```powershell
-& ".\Abuya Code\setup_medsam2.ps1"
+cd '.\Abuya Code'
+python Interface\ui_layout.py
 ```
 
-After loading a BraTS folder, MedSAM2 can be used immediately without running the U-Net. Select **Refine** on any 2D panel: left-click adds a foreground point, right-click adds a background point, and left-drag draws a box. **Preview** runs MedSAM2; **Accept** updates the measurements and 3D views and writes a native-space NIfTI mask under `Abuya Code/outputs/refined_masks`. The brain icon remains available when you want to run the separate 3D U-Net model.
+The viewer uses Zaq's `outputs/checkpoints/best_model.pth`. MedSAM2 is a
+separate refinement model; its pinned setup is in
+[`setup_medsam2.ps1`](Abuya%20Code/setup_medsam2.ps1). Its refinement requires
+an NVIDIA CUDA GPU. The app does not bundle patient scans; select a patient
+folder in the viewer. MedSAM2's local source and checkpoint are excluded from
+Git.
 
-## To fix
+## Evaluation results
 
-Bugs and polish still sitting in the current viewer.
+Open the checked [Step 1 and Step 2 comparison](Abuya%20Code/outputs/evaluation/step1_step2_comparison.html)
+or the [results notebook](Abuya%20Code/notebooks/step1_step2_results.ipynb).
+See [EVALUATION.md](Abuya%20Code/EVALUATION.md) for the per-patient CSVs,
+rerun commands, data requirements, and the radiomics label-leakage limitation.
+The reported 38-patient Dice scores use a labeled holdout from `Training`;
+the provided `Validation` folder has no masks for calculating Dice.
 
-- 🟠 **Segmentation overlay animation** — the run-time scan effect in the 2D viewers glitches, and it still uses the old teal. Retheme it to yellowish-orange and make the motion clean.
-- ⬛ **Full-black 2D viewers** — sagittal, axial, and coronal should be black across the whole panel. Right now only part of each viewer is black.
-- ⬇️ **Survival Days vs remarks** — after survival is calculated the digits grow and shove the UniKL remarks off the window. Keep the credit strip inside the software.
+## Windows executable
+
+The local executable is `Abuya Code/dist/BrainTumorViewer.exe`. It is a large
+one-file build and is excluded from Git. To rebuild or check it, follow
+[`packaging/BUILD.md`](Abuya%20Code/packaging/BUILD.md). The desktop viewer
+uses the PyTorch checkpoint; the quantized ONNX model is an evaluation result,
+not the model loaded by this UI.
+
+## Legacy reference files
+
+The image, placeholder HTML, old installation commands, and standalone
+confusion-metrics page are in [`reference/legacy/`](reference/legacy/README.md).
+The original root-level `ui_layout.py` remains at its old path because it can
+be launched directly.
