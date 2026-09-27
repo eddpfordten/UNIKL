@@ -4,6 +4,7 @@ Configuration file for brain tumor segmentation.
 All paths and training settings are defined here so you can
 change them in one place without editing other files.
 """
+import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -17,16 +18,26 @@ DATA_SUBDIR_NAME = "BraTS-PEDs-v1"
 
 def find_data_root(start: Path) -> Path:
     """
-    Look for the dataset next to the project, then in each directory above it.
+    Use BRATS_DATA_ROOT if set, then search near the project and on the
+    configured Google Drive shortcut.
 
     The project folder gets moved around (downloads, nested copies), so a fixed
     number of .parent hops breaks easily. If nothing is found we return the
     original guess, so the resulting error names the expected location.
     """
+    configured = os.environ.get("BRATS_DATA_ROOT")
+    if configured:
+        return Path(configured).expanduser()
     for directory in [start, *start.parents]:
         candidate = directory / DATA_DIR_NAME / DATA_SUBDIR_NAME
         if candidate.is_dir():
             return candidate
+    drive_root = Path(
+        r"G:\.shortcut-targets-by-id\1Mhk0XQF7rEZyrBFz0Gf0SWCEJv7QWZ1c"
+        r"\3D BRAIN SEGMENTATION\PKG - BraTS-PEDs-v1\BraTS-PEDs-v1"
+    )
+    if drive_root.is_dir():
+        return drive_root
     return start / DATA_DIR_NAME / DATA_SUBDIR_NAME
 
 
@@ -59,7 +70,7 @@ VAL_SPLIT = 0.15
 
 # ---------------------------------------------------------------------------
 # Training settings
-# ---------------------------------------------------------------------------
+
 BATCH_SIZE = 1          # 3D volumes are memory-heavy; keep batch size small
 NUM_EPOCHS = 20
 LEARNING_RATE = 1e-4
@@ -67,14 +78,16 @@ NUM_WORKERS = 0         # 0 is safest on Windows
 
 # ---------------------------------------------------------------------------
 # Survival head settings
-# ---------------------------------------------------------------------------
+
 # Turns the second (survival regression) head on. Only ~115 of the 257 training
 # cases carry a survival label, so the survival loss is masked per sample
 # instead of dropping the unlabeled cases from segmentation training.
+
 PREDICT_SURVIVAL = True
 
 # Segmentation stays the primary task. Survival labels are sparse and noisy, so
 # their loss is scaled down to keep it from dominating the BCE + Dice gradient.
+
 SURVIVAL_LOSS_WEIGHT = 0.3
 
 # log1p mean/std of the survival target, saved next to the checkpoints so that

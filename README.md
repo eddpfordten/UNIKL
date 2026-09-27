@@ -42,6 +42,13 @@ an NVIDIA CUDA GPU. The app does not bundle patient scans; select a patient
 folder in the viewer. MedSAM2's local source and checkpoint are excluded from
 Git.
 
+The source viewer's report shows recorded survival from the BraTS-PEDs TSV
+when that patient has a label. Its **Predicted Survival Days** display is a
+model estimate and may differ from the recorded value. The dataset path can
+also be set with `BRATS_DATA_ROOT`; the current `G:` Google Drive shortcut is
+used when available. The existing executable is a snapshot of the earlier UI
+and is not updated by source edits.
+
 ## Evaluation results
 
 Open the checked [Step 1 and Step 2 comparison](Abuya%20Code/outputs/evaluation/step1_step2_comparison.html)
