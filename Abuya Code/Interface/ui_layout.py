@@ -825,6 +825,10 @@ class _RecordRow(QWidget):
 
 
 REPORT_MAX_TUMOR_ROWS = 5   # rows shown in the Report card; the rest are summarised
+# Predictions below this physical size are overwhelmingly interpolation /
+# threshold specks, not useful lesions.  Applying it before *any* view keeps
+# the reported count, 2D overlays, and 3D meshes in agreement.
+MIN_PREDICTED_COMPONENT_CM3 = 0.15
 
 
 class _TumorRow(QWidget):
@@ -861,35 +865,17 @@ class _TumorRow(QWidget):
         )
         line.addWidget(vol)
 
+        # Mean voxel probability is not a clinical confidence score, so do
+        # not present it as a percentage or a progress bar.
         if confidence is None:
-            conf_text, conf_color = "Refined", TEXT_MUTED
-            tip = "Mask edited with MedSAM2 — no model confidence for this region"
-        else:
-            conf_text, conf_color = f"{confidence * 100:.1f}%", TEXT_LIGHT
-            tip = "Mean model probability across this tumor's voxels"
-        conf = QLabel(conf_text)
-        conf.setToolTip(tip)
-        conf.setMinimumWidth(40)
-        conf.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        conf.setStyleSheet(
-            f"border: none; background: transparent; color: {conf_color}; "
-            "font-size: 11px; font-weight: 700;"
-        )
-        line.addWidget(conf)
-        col.addLayout(line)
-
-        if confidence is not None:
-            bar = QProgressBar()
-            bar.setRange(0, 1000)
-            bar.setValue(int(round(max(0.0, min(1.0, confidence)) * 1000)))
-            bar.setTextVisible(False)
-            bar.setFixedHeight(3)
-            bar.setStyleSheet(
-                "QProgressBar { border: none; border-radius: 1px; background-color: #2a2a2e; "
-                "min-height: 3px; max-height: 3px; }"
-                f"QProgressBar::chunk {{ background-color: {color_hex}; border-radius: 1px; }}"
+            refined = QLabel("Refined")
+            refined.setToolTip("Mask edited with MedSAM2")
+            refined.setStyleSheet(
+                f"border: none; background: transparent; color: {TEXT_MUTED}; "
+                "font-size: 10px; font-weight: 700;"
             )
-            col.addWidget(bar)
+            line.addWidget(refined)
+        col.addLayout(line)
 
 
 class PatientRecordPanel(HivePanel):
@@ -3202,7 +3188,8 @@ def _style_ui_figure(fig: go.Figure) -> go.Figure:
     return fig
 
 
-def _prepare_3d(volume: np.ndarray, mask: Optional[np.ndarray], affine: np.ndarray):
+def _prepare_3d(volume: np.ndarray, mask: Optional[np.ndarray], affine: np.ndarray,
+                labels: Optional[np.ndarray] = None):
     """Downsample for marching cubes and convert the affine into voxel spacing."""
     spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0)).astype(np.float64)
     longest = float(max(volume.shape))
@@ -3213,11 +3200,14 @@ def _prepare_3d(volume: np.ndarray, mask: Optional[np.ndarray], affine: np.ndarr
         volume = zoom(volume, zooms, order=1)
         if mask is not None:
             mask = (zoom(mask.astype(np.float32), zooms, order=0) > 0.5).astype(np.float32)
+        if labels is not None:
+            # Nearest-neighbour preserves the full-resolution component IDs.
+            labels = zoom(labels.astype(np.int32), zooms, order=0).astype(np.int32)
         spacing = spacing / factor
-    return volume, mask, tuple(float(s) for s in spacing)
+    return volume, mask, labels, tuple(float(s) for s in spacing)
 
 
-def build_tumor_figure(mask: np.ndarray, spacing: tuple) -> go.Figure:
+def build_tumor_figure(mask: np.ndarray, spacing: tuple, labels=None, color_map=None) -> go.Figure:
     """Tumor mesh alone, from the shared 3D viewer."""
     fig = show_volume_3d(
         mask,
@@ -3225,6 +3215,8 @@ def build_tumor_figure(mask: np.ndarray, spacing: tuple) -> go.Figure:
         show_brain=False,
         level=0.5,
         min_voxels=25,
+        component_labels=labels,
+        component_colours=color_map,
         spacing=spacing,
         title="3D tumor",
         clean=True,
@@ -3247,7 +3239,7 @@ def _tag_tumor_traces(fig: go.Figure) -> go.Figure:
 def build_brain_figure(
     volume: np.ndarray,
     mask: Optional[np.ndarray],
-    spacing: tuple,
+    spacing: tuple, labels=None, color_map=None,
 ) -> go.Figure:
     """Brain shell, with the tumor inside it when a mask is available."""
     fig = show_volume_3d(
@@ -3255,6 +3247,8 @@ def build_brain_figure(
         mask,
         show_brain=True,
         min_voxels=25 if mask is not None else 1,
+        component_labels=labels,
+        component_colours=color_map,
         spacing=spacing,
         title="3D brain",
         clean=True,
@@ -3558,10 +3552,13 @@ class MainWindow(QMainWindow):
             mask, probs, predicted_days = MainWindow._run_model_static(
                 model, device, model_input, display_volume.shape, survival_stats
             )
-            volume_3d, mask_3d, spacing = _prepare_3d(display_volume, mask, affine)
+            voxel_vol_cm3 = MainWindow._voxel_volume_cm3(affine)
+            mask = MainWindow._filter_predicted_components(mask, voxel_vol_cm3)
+            labels, components, color_map = self._label_tumor_components(mask, probs, voxel_vol_cm3)
+            volume_3d, mask_3d, labels_3d, spacing = _prepare_3d(display_volume, mask, affine, labels)
             has_tumor = mask_3d is not None and float(np.asarray(mask_3d).sum()) > 0
-            tumor_fig = build_tumor_figure(mask_3d, spacing) if has_tumor else None
-            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing)
+            tumor_fig = build_tumor_figure(mask_3d, spacing, labels_3d, color_map) if has_tumor else None
+            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing, labels_3d, color_map)
             return {
                 "display_volume": display_volume,
                 "affine": affine,
@@ -3569,6 +3566,9 @@ class MainWindow(QMainWindow):
                 "axcodes": axcodes,
                 "mask": mask,
                 "probs": probs,
+                "labels": labels,
+                "components": components,
+                "color_map": color_map,
                 "predicted_days": predicted_days,
                 "tumor_fig": tumor_fig,
                 "brain_fig": brain_fig,
@@ -3587,7 +3587,9 @@ class MainWindow(QMainWindow):
         self.coronal_panel.set_volume(display_volume)
 
         voxel_vol_cm3 = self._voxel_volume_cm3(affine)
-        labels, components, color_map = self._label_tumor_components(mask, probs, voxel_vol_cm3)
+        labels = result["labels"]
+        components = result["components"]
+        color_map = result["color_map"]
         self.sagittal_panel.set_detection(probs, labels, color_map)
         self.axial_panel.set_detection(probs, labels, color_map)
         self.coronal_panel.set_detection(probs, labels, color_map)
@@ -3682,6 +3684,17 @@ class MainWindow(QMainWindow):
             color_map[entry["label_id"]] = color_hex
 
         return labels, entries, color_map
+
+    @staticmethod
+    def _filter_predicted_components(mask: np.ndarray, voxel_vol_cm3: float) -> np.ndarray:
+        """Remove sub-clinical disconnected prediction specks before reporting."""
+        labels, n_components = ndi_label(mask > 0.5)
+        cleaned = np.asarray(mask, dtype=np.float32).copy()
+        for label_id in range(1, n_components + 1):
+            region = labels == label_id
+            if float(region.sum()) * voxel_vol_cm3 < MIN_PREDICTED_COMPONENT_CM3:
+                cleaned[region] = 0.0
+        return cleaned
 
     def _set_2d_loading(self, active: bool):
         """Shows/hides the spinner overlay on all three 2D panels at once."""
@@ -3868,10 +3881,10 @@ class MainWindow(QMainWindow):
             labels, components, color_map = self._label_tumor_components(
                 mask, None, voxel_vol_cm3
             )
-            volume_3d, mask_3d, spacing = _prepare_3d(volume, mask, affine)
+            volume_3d, mask_3d, labels_3d, spacing = _prepare_3d(volume, mask, affine, labels)
             has_tumor = bool(np.any(mask_3d))
-            tumor_fig = build_tumor_figure(mask_3d, spacing) if has_tumor else None
-            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing)
+            tumor_fig = build_tumor_figure(mask_3d, spacing, labels_3d, color_map) if has_tumor else None
+            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing, labels_3d, color_map)
             return {
                 "mask": mask,
                 "labels": labels,
@@ -3946,9 +3959,11 @@ class MainWindow(QMainWindow):
                 points=prompt["points"],
                 point_labels=prompt["point_labels"],
             )
-            volume_3d, mask_3d, spacing = _prepare_3d(volume, mask, self._display_affine)
-            tumor_fig = build_tumor_figure(mask_3d, spacing) if np.any(mask_3d) else None
-            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing)
+            voxel_vol_cm3 = self._voxel_volume_cm3(self._display_affine)
+            labels, _components, color_map = self._label_tumor_components(mask, None, voxel_vol_cm3)
+            volume_3d, mask_3d, labels_3d, spacing = _prepare_3d(volume, mask, self._display_affine, labels)
+            tumor_fig = build_tumor_figure(mask_3d, spacing, labels_3d, color_map) if np.any(mask_3d) else None
+            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing, labels_3d, color_map)
             return {"mask": mask, "tumor_fig": tumor_fig, "brain_fig": brain_fig}
 
         self._start_background(job, self._on_sam_refinement_ready, self._on_sam_refinement_failed)
@@ -4010,15 +4025,17 @@ class MainWindow(QMainWindow):
         Build the two 3D Plotly figures via `show_volume_3d` and load them
         into the right-column panels. A None/empty mask still draws the brain.
         """
-        volume_3d, mask_3d, spacing = _prepare_3d(display_volume, mask, affine)
+        voxel_vol_cm3 = self._voxel_volume_cm3(affine)
+        labels, _components, color_map = self._label_tumor_components(mask, None, voxel_vol_cm3) if mask is not None else (None, [], {})
+        volume_3d, mask_3d, labels_3d, spacing = _prepare_3d(display_volume, mask, affine, labels)
 
         try:
             has_tumor = mask_3d is not None and float(np.asarray(mask_3d).sum()) > 0
             if has_tumor:
-                self.tumor_3d_panel.set_figure(build_tumor_figure(mask_3d, spacing))
+                self.tumor_3d_panel.set_figure(build_tumor_figure(mask_3d, spacing, labels_3d, color_map))
             else:
                 self.tumor_3d_panel.clear_figure()
-            self.brain_3d_panel.set_figure(build_brain_figure(volume_3d, mask_3d, spacing))
+            self.brain_3d_panel.set_figure(build_brain_figure(volume_3d, mask_3d, spacing, labels_3d, color_map))
         except Exception as exc:
             QMessageBox.warning(self, "3D render failed", str(exc))
 

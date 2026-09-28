@@ -18,15 +18,13 @@ class MedSAM2Refiner:
         self.checkpoint = Path(checkpoint)
         self.config = config
         self._predictor = None
+        # CUDA is preferred, but a CPU-only packaged build must still be able
+        # to refine a mask.  It is slower, not unsupported.
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def _load(self):
         if self._predictor is not None:
             return self._predictor
-        if not torch.cuda.is_available():
-            raise RuntimeError(
-                "MedSAM2 requires CUDA, but this Python installation has CPU-only PyTorch. "
-                "Run setup_medsam2.ps1 with Python 3.12 first."
-            )
         if not self.checkpoint.is_file():
             raise FileNotFoundError(
                 f"MedSAM2 checkpoint not found: {self.checkpoint}. Run setup_medsam2.ps1."
@@ -38,12 +36,11 @@ class MedSAM2Refiner:
                 "The official MedSAM2 package is not installed. Run setup_medsam2.ps1."
             ) from exc
         self._predictor = build_sam2_video_predictor_npz(
-            self.config, str(self.checkpoint), device="cuda", apply_postprocessing=False
+            self.config, str(self.checkpoint), device=str(self.device), apply_postprocessing=False
         )
         return self._predictor
 
-    @staticmethod
-    def _frames(volume: np.ndarray, plane: str) -> torch.Tensor:
+    def _frames(self, volume: np.ndarray, plane: str) -> torch.Tensor:
         volume = np.asarray(volume, dtype=np.float32)
         nonzero = volume[volume != 0]
         if nonzero.size:
@@ -62,9 +59,9 @@ class MedSAM2Refiner:
             image = Image.fromarray(np.uint8(frame * 255.0), mode="L").convert("RGB")
             image = image.resize((512, 512), Image.Resampling.BILINEAR)
             converted.append(np.asarray(image, dtype=np.float32).transpose(2, 0, 1) / 255.0)
-        tensor = torch.from_numpy(np.stack(converted)).to("cuda")
-        mean = torch.tensor((0.485, 0.456, 0.406), device="cuda")[:, None, None]
-        std = torch.tensor((0.229, 0.224, 0.225), device="cuda")[:, None, None]
+        tensor = torch.from_numpy(np.stack(converted)).to(self.device)
+        mean = torch.tensor((0.485, 0.456, 0.406), device=self.device)[:, None, None]
+        std = torch.tensor((0.229, 0.224, 0.225), device=self.device)[:, None, None]
         return (tensor - mean) / std
 
     def refine(
@@ -95,7 +92,11 @@ class MedSAM2Refiner:
         images = self._frames(volume, plane)
         height, width = frames.shape[1:]
         result = np.zeros(frames.shape, dtype=np.uint8)
-        autocast = torch.autocast("cuda", dtype=torch.bfloat16) if torch.cuda.is_bf16_supported() else nullcontext()
+        autocast = (
+            torch.autocast("cuda", dtype=torch.bfloat16)
+            if self.device.type == "cuda" and torch.cuda.is_bf16_supported()
+            else nullcontext()
+        )
         try:
             with torch.inference_mode(), autocast:
                 # Point/box input replaces a mask prompt on the same frame in
@@ -123,11 +124,13 @@ class MedSAM2Refiner:
                     finally:
                         predictor.reset_state(state)
         except torch.cuda.OutOfMemoryError as exc:
-            torch.cuda.empty_cache()
+            if self.device.type == "cuda":
+                torch.cuda.empty_cache()
             raise RuntimeError(
                 "MedSAM2 ran out of GPU memory. Close other GPU applications and try again."
             ) from exc
         finally:
             del images
-            torch.cuda.empty_cache()
+            if self.device.type == "cuda":
+                torch.cuda.empty_cache()
         return frames_as_volume(result, plane).astype(np.float32)

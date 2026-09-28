@@ -203,6 +203,8 @@ def show_volume_3d(
     smoothing: float = 1.0,
     show_brain: bool = True,
     analysis: Optional[ComponentAnalysis] = None,
+    component_labels: Optional[np.ndarray] = None,
+    component_colours: Optional[Dict[int, str]] = None,
     connectivity: int = 3,
     min_voxels: int = 1,
     max_components: Optional[int] = None,
@@ -267,29 +269,48 @@ def show_volume_3d(
         if brain is not None:
             traces.append(brain)
 
-    if analysis is None and mask is not None:
+    # The desktop viewer has already labelled the full-resolution mask and
+    # ranked it by volume.  Keep those IDs after display downsampling; running
+    # connected-components again here would renumber them in scan order and
+    # make the 3D colours disagree with the 2D/report colours.
+    if component_labels is not None:
+        labels = np.asarray(component_labels)
+        if labels.shape != volume.shape:
+            raise ValueError("component_labels shape must match image shape")
+        component_ids = [int(i) for i in np.unique(labels) if i > 0]
+        if max_components is not None:
+            component_ids = component_ids[:max_components]
+        n_components = len(component_ids)
+        for component_id in component_ids:
+            voxels = int((labels == component_id).sum())
+            colour = (component_colours or {}).get(component_id)
+            if colour is None:
+                colour = _rgb_string(_component_colour(component_id))
+            trace = _mesh_trace(
+                (labels == component_id).astype(np.float32), 0.5, tumor_step,
+                colour, 1.0, f"#{component_id}  {voxels:,} vox", spacing=voxel_spacing,
+            )
+            if trace is not None:
+                traces.append(trace)
+    elif analysis is None and mask is not None:
         analysis = analyze_components(
             mask, connectivity=connectivity, min_voxels=min_voxels
         )
 
-    components = analysis.components if analysis is not None else []
-    if max_components is not None:
-        components = components[:max_components]
-
-    for comp in components:
-        trace = _mesh_trace(
-            (analysis.labels == comp.id).astype(np.float32),
-            0.5,
-            tumor_step,
-            _rgb_string(_component_colour(comp.id)),
-            1.0,
-            f"#{comp.id}  {comp.n_voxels:,} vox ({comp.volume_fraction:.0%})",
-            spacing=voxel_spacing,
-        )
-        if trace is not None:
-            traces.append(trace)
-
-    n_components = analysis.n_components if analysis is not None else 0
+    if component_labels is None:
+        components = analysis.components if analysis is not None else []
+        if max_components is not None:
+            components = components[:max_components]
+        for comp in components:
+            trace = _mesh_trace(
+                (analysis.labels == comp.id).astype(np.float32), 0.5, tumor_step,
+                _rgb_string(_component_colour(comp.id)), 1.0,
+                f"#{comp.id}  {comp.n_voxels:,} vox ({comp.volume_fraction:.0%})",
+                spacing=voxel_spacing,
+            )
+            if trace is not None:
+                traces.append(trace)
+        n_components = analysis.n_components if analysis is not None else 0
     scene = {
         "aspectmode": "data",
         "camera": DEFAULT_CAMERA,
