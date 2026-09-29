@@ -1,0 +1,17 @@
+{
+  "model": "own",
+  "checkpoint": "best_model.pth",
+  "data_root": "BraTS-PEDs-v1",
+  "split": "Training holdout",
+  "seed": 42,
+  "patients": 38,
+  "mean_dice": 0.8484131866379788,
+  "threshold": 0.5,
+  "target_shape": [
+    96,
+    96,
+    96
+  ],
+  "device": "cpu",
+  "elapsed_seconds": 716.1844366000005
+}

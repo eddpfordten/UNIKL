@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 # UNIKL
 UNIKL Studies
 Assalamualaikum semua mari kita semua
@@ -23,3 +24,94 @@ Bugs and polish still sitting in the current viewer.
 - 🟠 **Segmentation overlay animation** — the run-time scan effect in the 2D viewers glitches, and it still uses the old teal. Retheme it to yellowish-orange and make the motion clean.
 - ⬛ **Full-black 2D viewers** — sagittal, axial, and coronal should be black across the whole panel. Right now only part of each viewer is black.
 - ⬇️ **Survival Days vs remarks** — after survival is calculated the digits grow and shove the UniKL remarks off the window. Keep the credit strip inside the software.
+=======
+# UNIKL Brain Tumor Segmentation
+
+This repository contains the Abuya Code desktop viewer, segmentation models,
+training notebooks, and the Step 1 and Step 2 Dice comparison. The active app
+is in [`Abuya Code/Interface/ui_layout.py`](Abuya%20Code/Interface/ui_layout.py).
+The older root-level [`ui_layout.py`](ui_layout.py) is a separate standalone
+viewer and remains in place.
+
+## Where things are
+
+| Location | Contents |
+| --- | --- |
+| [`Abuya Code/Interface/`](Abuya%20Code/Interface/) | Current PySide6 viewer and its images/icons |
+| [`Abuya Code/brain_tumor_seg/`](Abuya%20Code/brain_tumor_seg/) | Data loading, model, inference, MedSAM2, and visualization code |
+| [`Abuya Code/notebooks/`](Abuya%20Code/notebooks/) | Training notebooks and the saved-results notebook |
+| [`Abuya Code/outputs/checkpoints/`](Abuya%20Code/outputs/checkpoints/) | Zaq checkpoints and survival statistics used by the app |
+| [`Abuya Code/outputs/evaluation/`](Abuya%20Code/outputs/evaluation/) | Checked Dice CSV/JSON results, comparison HTML, ONNX models, and local evaluation assets |
+| [`Abuya Code/outputs/plots/`](Abuya%20Code/outputs/plots/) | Saved training plots |
+| [`Abuya Code/packaging/`](Abuya%20Code/packaging/) | Windows executable build recipe and instructions |
+| [`Abuya Code/tests/`](Abuya%20Code/tests/) | Existing MedSAM2 checks |
+| [`reference/legacy/`](reference/legacy/) | Old standalone reference files that the current app does not load |
+
+The Google Drive BraTS-PEDs dataset is external to this repository. The
+`Abuya Code/vendor/`, `.venv/`, `build_exe/`, and `dist/` directories are local
+setup or build files. The source code expects the existing notebook, checkpoint,
+and evaluation paths above, so they have not been reorganized.
+
+## Open the viewer
+
+From PowerShell in the repository root, use the project environment with the
+packages in `Abuya Code/requirements.txt`:
+
+```powershell
+cd '.\Abuya Code'
+python Interface\ui_layout.py
+```
+
+The viewer uses Zaq's `outputs/checkpoints/best_model.pth`. MedSAM2 is a
+separate refinement model; its pinned setup is in
+[`setup_medsam2.ps1`](Abuya%20Code/setup_medsam2.ps1). Its refinement requires
+an NVIDIA CUDA GPU. The app does not bundle patient scans; select a patient
+folder in the viewer. MedSAM2's local source and checkpoint are excluded from
+Git.
+
+The source viewer's report shows recorded survival from the BraTS-PEDs TSV
+when that patient has a label. Its **Predicted Survival Days** display is a
+model estimate and may differ from the recorded value. The dataset path can
+also be set with `BRATS_DATA_ROOT`; the current `G:` Google Drive shortcut is
+used when available. The existing executable is a snapshot of the earlier UI
+and is not updated by source edits.
+
+The source viewer runs Zaq's PyTorch model for segmentation and its survival
+estimate. Hayyi and the quantized ONNX model remain available as evaluation
+artifacts; they are not selectable in the viewer.
+
+## Evaluation results
+
+Open the checked [Step 1 and Step 2 comparison](Abuya%20Code/outputs/evaluation/step1_step2_comparison.html)
+or the [results notebook](Abuya%20Code/notebooks/step1_step2_results.ipynb).
+See [EVALUATION.md](Abuya%20Code/EVALUATION.md) for the per-patient CSVs,
+rerun commands, data requirements, and the radiomics label-leakage limitation.
+The reported 38-patient Dice scores use a labeled holdout from `Training`;
+the provided `Validation` folder has no masks for calculating Dice.
+
+## Windows executable
+
+The local executable is `Abuya Code/dist/BrainTumorViewer.exe`. It is a large
+one-file build and is excluded from Git. To rebuild or check it, follow
+[`packaging/BUILD.md`](Abuya%20Code/packaging/BUILD.md). The current build
+uses Zaq's model only. The previous executable is kept as
+`Abuya Code/dist/BrainTumorViewer.previous.exe`.
+
+To share the app, send the current `BrainTumorViewer.exe` to a Windows x64 PC.
+The recipient does not need Python, but must supply their own four-modality
+BraTS patient folder. The MRI dataset and survival metadata TSV are not bundled;
+without the TSV, the report cannot show recorded survival. MedSAM refinement
+requires a compatible NVIDIA GPU and driver. Zaq segmentation can use the CPU,
+although it will be slower. Allow several GB of free space for one-file
+extraction on launch.
+For recorded survival on another PC, place the TSV beside the dataset's
+`Training` and `Validation` folders, then set `BRATS_DATA_ROOT` to that dataset
+root before launching the EXE.
+
+## Legacy reference files
+
+The image, placeholder HTML, old installation commands, and standalone
+confusion-metrics page are in [`reference/legacy/`](reference/legacy/README.md).
+The original root-level `ui_layout.py` remains at its old path because it can
+be launched directly.
+>>>>>>> Stashed changes
