@@ -12,6 +12,7 @@ Run from this folder or the project root:
     python ui_layout.py
 """
 import math
+import time
 import os
 import re
 import sys
@@ -47,43 +48,17 @@ def _prefer_pyside6_dlls() -> None:
 
 _prefer_pyside6_dlls()
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-from PySide6.QtCore import Qt, QUrl, QTimer, QPointF, QObject, QThread, Signal, QSize
+from PySide6.QtCore import Qt, QUrl, QTimer, QPoint, QPointF, QRectF, QObject, QThread, Signal, QSize
 from PySide6.QtGui import (
     QColor, QFont, QIcon, QImage, QLinearGradient, QPainter, QPainterPath,
-    QPen, QPixmap, QPolygonF,
-<<<<<<< Updated upstream
-=======
-=======
-from PySide6.QtCore import Qt, QUrl, QTimer, QPointF, QRectF, QObject, QThread, Signal, QSize
-from PySide6.QtGui import (
-    QColor, QFont, QIcon, QImage, QLinearGradient, QPainter, QPainterPath,
-    QPen, QPixmap, QPolygonF, QRadialGradient,
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
+    QPen, QPixmap, QPolygonF, QRadialGradient, QRegion,
 )
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QFileDialog, QSizePolicy, QSlider, QMessageBox,
-<<<<<<< Updated upstream
-    QProgressBar, QStackedLayout, QScrollArea,
+    QProgressBar, QStackedLayout, QScrollArea, QGridLayout, QButtonGroup,
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
-=======
-<<<<<<< HEAD
-    QProgressBar, QStackedLayout, QScrollArea,
-)
-from PySide6.QtWebEngineWidgets import QWebEngineView
-=======
-    QProgressBar, QStackedLayout, QScrollArea, QGridLayout,
-)
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebEngineCore import QWebEnginePage
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 
 import numpy as np
 import nibabel as nib
@@ -91,19 +66,13 @@ import torch
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
-from scipy.ndimage import zoom, label as ndi_label, center_of_mass as ndi_center_of_mass
+from scipy.ndimage import zoom, label as ndi_label, center_of_mass as ndi_center_of_mass, gaussian_filter
+from skimage.measure import marching_cubes
 import plotly.graph_objects as go
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-from brain_tumor_seg.config import CHECKPOINT_DIR, MODALITIES, TARGET_SHAPE
-=======
 from brain_tumor_seg.config import (
     CHECKPOINT_DIR, MEDSAM2_CHECKPOINT, MODALITIES, REFINED_MASK_DIR, TARGET_SHAPE,
 )
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
 from brain_tumor_seg.data.dataset import _normalize
 from brain_tumor_seg.data.survival import load_survival_days, load_survival_stats
 from brain_tumor_seg.evaluation import predict_survival_days
@@ -117,36 +86,46 @@ from brain_tumor_seg.visualization.viewer3d import INTERACTION_CONFIG, show_volu
 # ---------------------------------------------------------------------------
 # Dark theme palette — charcoal base with yellowish-orange as the
 # high-tech accent (UniKL KL orange, tumor highlight, survival neon).
-# Teal stays only on the 2D scan overlays so the amber chrome can read.
+# Blue iridescent theme: indigo glass, sky-blue accent, violet / magenta / teal highlights.
 # ---------------------------------------------------------------------------
-BG_PAGE = "#121214"
-BG_PANEL = "#1c1c20"
-BORDER_DIM = "#2e2a24"
-ACCENT_AMBER = "#ff9f1c"
-ACCENT_AMBER_SOFT = "#ffc14d"
-ACCENT_AMBER_DEEP = "#e67a00"
-ACCENT_TEAL = "#0a84ff"
-ACCENT_TEAL_SOFT = "#409cff"
-ACCENT_CORAL = ACCENT_AMBER
-ACCENT_CORAL_SOFT = ACCENT_AMBER_SOFT
-TEXT_LIGHT = "#f4f1ea"
-TEXT_MUTED = "#9a9388"
+# Clean minimal theme: white cards on a soft off-white page, one blue accent,
+# and a dark "Dynamic Island" pill in the header holding the main actions.
+BG_PAGE = "#F5F8FD"
+BG_PANEL = "#FFFFFF"                       # cards, dialogs, Qt defaults
+GLASS_BG = "#FFFFFF"                       # card fill (name kept from the old glass theme)
+GLASS_EDGE = "#E6ECF5"                     # hairline card border
+BORDER_DIM = "#DCE4F0"
+ACCENT = "#1F6FEB"                         # primary blue
+ACCENT_SOFT = "#2F7CF6"
+ACCENT_DEEP = "#1558C9"
+ACCENT_VIOLET = "#3B82F6"
+ACCENT_MAGENTA = "#5AA2FF"
+ACCENT_TEAL = "#3B82F6"                    # loading effects over the dark scan viewport
+ACCENT_TEAL_SOFT = "#1F6FEB"
+ACCENT_CORAL = ACCENT
+ACCENT_CORAL_SOFT = ACCENT_SOFT
+TEXT_LIGHT = "#0E1B33"                     # primary text (name kept; now dark on white)
+TEXT_MUTED = "#6B7A93"
+TEXT_DIM = "#A3AFC2"
+ISLAND_BG = "#0A1224"                      # the header "Dynamic Island" pill
+ISLAND_TEXT = "#C9D6EE"
+SCAN_BG = "#070B16"                        # dark viewport behind MRI slices
+SCAN_TEXT = "#9CC7FF"
+# Primary buttons, slider handles and bars (Qt stylesheet syntax).
+GRADIENT_QSS = "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1F6FEB, stop:1 #3B82F6)"
+GRADIENT_QSS_HOVER = "qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2F7CF6, stop:1 #5AA2FF)"
+# Ambient motion is off in the minimal theme (static, calm background).
+AMBIENT_MOTION = False    # False = still background (lighter on older laptops)
+AMBIENT_FPS = 15          # repaint rate of the background animation
+HEADER_SHOW_BRAIN_ART = False   # the old amber header artwork; off in the blue theme
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 _HEADER_BRAIN_PATH = _ASSETS_DIR / "header_brain.png"
 _UNIKL_LOGO_PATH = _ASSETS_DIR / "unikl_logo.png"
 _APP_ICON_PATH = _ASSETS_DIR / "app_icon.png"
 _APP_ICO_PATH = _ASSETS_DIR / "app_icon.ico"
 _RUN_ICON_PATH = _ASSETS_DIR / "icon_run.png"
-<<<<<<< Updated upstream
-SURVIVAL_EDGE_GAP = 12
-=======
-<<<<<<< HEAD
-SURVIVAL_EDGE_GAP = 12
-=======
 SURVIVAL_EDGE_GAP = 8
 SURVIVAL_DIGITS_HEIGHT = 64
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 _ICON_CACHE: dict = {}
 _HIVE_RGB_CACHE: dict = {}
 
@@ -156,14 +135,14 @@ _HIVE_RGB_CACHE: dict = {}
 # panel, and the PDF export so "the blue one" means the same tumor
 # everywhere. Cycles if there are more components than colors.
 COMPONENT_PALETTE = [
-    ("Red", "#ff3b30"),
-    ("Blue", "#0a84ff"),
-    ("Green", "#30d158"),
-    ("Yellow", "#ffd60a"),
-    ("Purple", "#bf5af2"),
-    ("Cyan", "#64d2ff"),
-    ("Orange", "#ff9f0a"),
-    ("Pink", "#ff375f"),
+    ("Red", "#E5484D"),
+    ("Amber", "#F5A524"),
+    ("Violet", "#8E6CEF"),
+    ("Green", "#30A46C"),
+    ("Pink", "#E54D9A"),
+    ("Teal", "#12A594"),
+    ("Orange", "#F76B15"),
+    ("Brown", "#AD7F58"),
 ]
 
 
@@ -176,7 +155,16 @@ def _hex_to_rgb01(hex_color: str) -> tuple:
 # panels within a column, gap between buttons, and the window's outer
 # margin. One number instead of several near-matching ones keeps the
 # rhythm consistent across the whole interface.
-SPACING = 16
+SPACING = 12        # gap between stacked panels and around the window edge
+COLUMN_GAP = 14     # gap between the report, 2D and 3D columns
+SAM_CARD_GAP = 10   # gap between each 2D view and its MedSAM2 card
+DROP_ROW_HEIGHT = 96                              # drop zone height = Run + gap + Clear
+ACTION_BTN_GAP = 8
+ACTION_BTN_W = 88
+ACTION_BTN_H = (DROP_ROW_HEIGHT - ACTION_BTN_GAP) // 2   # 44 each
+LEFT_COL_MAX = 300    # 2D slice column
+RIGHT_COL_MAX = 340   # 3D tumour / record / report column
+QT_MAX = 16777215
 
 APP_STYLESHEET = f"""
 QMainWindow, QWidget#rootShell {{
@@ -191,44 +179,57 @@ QMessageBox {{
 QMessageBox QLabel {{
     color: {TEXT_LIGHT};
 }}
+QToolTip {{
+    color: #ffffff;
+    background-color: {ISLAND_BG};
+    border: none;
+    border-radius: 6px;
+    padding: 4px 8px;
+}}
 QSlider {{
     background: transparent;
     min-height: 18px;
     max-height: 18px;
 }}
 QSlider::groove:horizontal {{
-    height: 3px;
-    background: {BORDER_DIM};
+    height: 4px;
+    background: #E3ECFA;
+    border-radius: 2px;
+}}
+QSlider::sub-page:horizontal {{
+    background: #BFD6FB;
     border-radius: 2px;
 }}
 QSlider::handle:horizontal {{
-    background: {ACCENT_AMBER};
-    width: 12px;
-    height: 12px;
+    background: #ffffff;
+    border: 2px solid {ACCENT};
+    width: 10px;
+    height: 10px;
     margin: -5px 0;
-    border-radius: 6px;
+    border-radius: 7px;
 }}
 QSlider::handle:horizontal:disabled {{
-    background: #48484a;
+    background: #ffffff;
+    border: 2px solid #D5DDEA;
 }}
 QProgressBar {{
     border: none;
-    border-radius: 5px;
-    background-color: {BG_PANEL};
-    height: 10px;
+    border-radius: 3px;
+    background-color: #E8EFFA;
+    height: 6px;
 }}
 QProgressBar::chunk {{
-    background-color: {ACCENT_AMBER};
-    border-radius: 5px;
+    background: {GRADIENT_QSS};
+    border-radius: 3px;
 }}
 QScrollBar:vertical {{
-    background: #16161a;
+    background: transparent;
     width: 8px;
     margin: 2px;
     border: none;
 }}
 QScrollBar::handle:vertical {{
-    background: {ACCENT_AMBER};
+    background: rgba(31, 111, 235, 0.25);
     border-radius: 4px;
     min-height: 22px;
 }}
@@ -248,8 +249,8 @@ def _panel_style(border_color: Optional[str] = None) -> str:
     accent color adds a thin 1.5px outline for the 'active/has data' state
     — no drop shadow, no glow, just a quiet color change.
     """
-    border = f"1.5px solid {border_color}" if border_color else "none"
-    return f"QFrame {{ border: {border}; border-radius: 16px; background-color: {BG_PANEL}; }}"
+    border = f"1px solid {border_color}" if border_color else f"1px solid {GLASS_EDGE}"
+    return f"QFrame {{ border: {border}; border-radius: 18px; background-color: {GLASS_BG}; }}"
 
 
 MAXIMIZE_BTN_STYLE = f"""
@@ -257,13 +258,13 @@ QPushButton {{
     border: none;
     border-radius: 6px;
     background-color: transparent;
-    color: {ACCENT_AMBER};
+    color: {ACCENT};
     font-size: 13px;
     padding: 1px 5px;
 }}
 QPushButton:hover {{
-    color: {ACCENT_AMBER_SOFT};
-    background-color: #3a3224;
+    color: {ACCENT_SOFT};
+    background-color: #EAF2FF;
 }}
 """
 
@@ -277,15 +278,15 @@ QFrame {{
 
 DROP_ZONE_HOVER_STYLE = f"""
 QFrame {{
-    border: 1.5px dashed {ACCENT_AMBER};
+    border: 1.5px dashed {ACCENT};
     border-radius: 16px;
-    background-color: #2a2114;
+    background-color: #F3F8FF;
 }}
 """
 
 DROP_ZONE_LOADED_STYLE = f"""
 QFrame {{
-    border: 1.5px solid {ACCENT_AMBER};
+    border: 1.5px solid {ACCENT};
     border-radius: 16px;
     background-color: {BG_PANEL};
 }}
@@ -311,16 +312,6 @@ MODEL_PATH = _resolve_checkpoint()
 INFERENCE_SIZE = TARGET_SHAPE
 # 3D marching cubes on a native 240^3 volume stalls the UI; downsample first.
 RENDER_MAX_DIM = 96
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-# Square display grid. Native BraTS volumes are often 240x240x155 — stretching
-# that directly to a cube distorts sagittal/coronal views. Pad to a cube first,
-# then resize with one scale so slices stay square and the tumor mask maps back
-# onto the same grid the 2D views show.
-STANDARD_DISPLAY_SHAPE = (128, 128, 128)
-=======
 # Fixed inference/display grid. Direct resizing is intentional because it
 # matches the preprocessing used to train the U-Net.
 STANDARD_DISPLAY_SHAPE = (128, 128, 128)  # Direct resize, matching training preprocessing.
@@ -356,123 +347,10 @@ def _resize_exact(volume: np.ndarray, target_shape: tuple, order: int = 1) -> np
         pad_widths = [(0, t - c) for c, t in zip(cropped.shape, target)]
         resampled = np.pad(cropped, pad_widths, mode="constant")
     return resampled
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
-
-# Embedded default for the folder picker (BraTS-PEDs training cases).
-EMBEDDED_TRAINING_DIR = Path(
-    r"C:\Users\Haqkiem\OneDrive\UNIKL\July-2026\Competition"
-    r"\PKG - BraTS-PEDs-v1\BraTS-PEDs-v1\Training"
-)
-
-_MODEL_CACHE = {"model": None, "device": None}
-
-
-def _default_browse_dir() -> str:
-    if EMBEDDED_TRAINING_DIR.is_dir():
-        return str(EMBEDDED_TRAINING_DIR)
-    for directory in [_PROJECT_ROOT, *_PROJECT_ROOT.parents]:
-        candidate = directory / "PKG - BraTS-PEDs-v1" / "BraTS-PEDs-v1" / "Training"
-        if candidate.is_dir():
-            return str(candidate)
-    return str(Path.home())
-
-
-def _cube_pads(shape) -> list:
-    size = max(int(s) for s in shape)
-    pads = []
-    for s in shape:
-        extra = size - int(s)
-        before = extra // 2
-        pads.append((before, extra - before))
-    return pads
-
-
-def _apply_pads(volume: np.ndarray, pads) -> np.ndarray:
-    if all(before == 0 and after == 0 for before, after in pads):
-        return volume
-    return np.pad(volume, pads, mode="constant")
-
-
-def _resize_exact(volume: np.ndarray, target_shape: tuple, order: int = 1) -> np.ndarray:
-    target = tuple(int(s) for s in target_shape)
-    if volume.shape == target:
-        return volume
-    zoom_factors = [t / s for t, s in zip(target, volume.shape)]
-    resampled = zoom(volume, zoom_factors, order=order)
-    if resampled.shape != target:
-        slices = tuple(slice(0, min(s, t)) for s, t in zip(resampled.shape, target))
-        cropped = resampled[slices]
-        pad_widths = [(0, t - c) for c, t in zip(cropped.shape, target)]
-        resampled = np.pad(cropped, pad_widths, mode="constant")
-    return resampled
-
-# Embedded default for the folder picker (BraTS-PEDs training cases).
-EMBEDDED_TRAINING_DIR = Path(
-    r"C:\Users\Haqkiem\OneDrive\UNIKL\July-2026\Competition"
-    r"\PKG - BraTS-PEDs-v1\BraTS-PEDs-v1\Training"
-)
-
-_MODEL_CACHE = {"model": None, "device": None}
-
-
-def _default_browse_dir() -> str:
-    if EMBEDDED_TRAINING_DIR.is_dir():
-        return str(EMBEDDED_TRAINING_DIR)
-    for directory in [_PROJECT_ROOT, *_PROJECT_ROOT.parents]:
-        candidate = directory / "PKG - BraTS-PEDs-v1" / "BraTS-PEDs-v1" / "Training"
-        if candidate.is_dir():
-            return str(candidate)
-    return str(Path.home())
-
-
-def _cube_pads(shape) -> list:
-    size = max(int(s) for s in shape)
-    pads = []
-    for s in shape:
-        extra = size - int(s)
-        before = extra // 2
-        pads.append((before, extra - before))
-    return pads
-
-
-def _apply_pads(volume: np.ndarray, pads) -> np.ndarray:
-    if all(before == 0 and after == 0 for before, after in pads):
-        return volume
-    return np.pad(volume, pads, mode="constant")
-
-
-def _resize_exact(volume: np.ndarray, target_shape: tuple, order: int = 1) -> np.ndarray:
-    target = tuple(int(s) for s in target_shape)
-    if volume.shape == target:
-        return volume
-    zoom_factors = [t / s for t, s in zip(target, volume.shape)]
-    resampled = zoom(volume, zoom_factors, order=order)
-    if resampled.shape != target:
-        slices = tuple(slice(0, min(s, t)) for s, t in zip(resampled.shape, target))
-        cropped = resampled[slices]
-        pad_widths = [(0, t - c) for c, t in zip(cropped.shape, target)]
-        resampled = np.pad(cropped, pad_widths, mode="constant")
-    return resampled
 
 
 def _standardize_volume(volume: np.ndarray, affine: np.ndarray, order: int = 1):
     """
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-    Pad to a cube (no stretch), then resize to STANDARD_DISPLAY_SHAPE.
-    Masks predicted at INFERENCE_SIZE are mapped back to this same grid.
-    """
-    native_spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0))
-    pads = _cube_pads(volume.shape)
-    padded = _apply_pads(volume, pads)
-    padded_shape = np.array(padded.shape, dtype=np.float64)
-    resampled = _resize_exact(padded, STANDARD_DISPLAY_SHAPE, order=order)
-    new_spacing = native_spacing * (padded_shape / np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64))
-<<<<<<< Updated upstream
-=======
-=======
     Resample to STANDARD_DISPLAY_SHAPE exactly as the training dataset does.
 
     The returned affine reflects the resized voxel spacing, keeping volume and
@@ -483,8 +361,6 @@ def _standardize_volume(volume: np.ndarray, affine: np.ndarray, order: int = 1):
     display_shape = np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64)
     resampled = _resize_exact(volume, STANDARD_DISPLAY_SHAPE, order=order)
     new_spacing = native_spacing * (native_shape / display_shape)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
     new_affine = np.eye(4)
     new_affine[0, 0] = new_spacing[0]
     new_affine[1, 1] = new_spacing[1]
@@ -529,15 +405,7 @@ def _ensure_model():
     if not MODEL_PATH.exists():
         raise FileNotFoundError(f"Checkpoint not found: {MODEL_PATH}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-<<<<<<< Updated upstream
-    state_dict = torch.load(MODEL_PATH, map_location=device)
-=======
-<<<<<<< HEAD
-    state_dict = torch.load(MODEL_PATH, map_location=device)
-=======
     state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
     model = MultiTaskUNet3D(in_channels=4, out_channels=1)
     try:
         model.load_state_dict(state_dict)
@@ -554,7 +422,7 @@ def _column_separator() -> QFrame:
     line = QFrame()
     line.setFixedWidth(1)
     line.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-    line.setStyleSheet("QFrame { background-color: #4a3a22; border: none; }")
+    line.setStyleSheet(f"QFrame {{ background-color: {GLASS_EDGE}; border: none; }}")
     return line
 
 
@@ -567,37 +435,18 @@ def _hex_points(cx: float, cy: float, radius: float) -> QPolygonF:
 
 
 def _paint_hive_chrome(painter: QPainter, rect, color: QColor) -> None:
-    """Amber honeycomb corners + edge ticks around a card."""
+    """Card chrome hook — intentionally empty in the minimal theme."""
+    return
     painter.setRenderHint(QPainter.Antialiasing)
-    inset = 9
-    radius = 6.5
-    corners = (
-        (rect.left() + inset, rect.top() + inset),
-        (rect.right() - inset, rect.top() + inset),
-        (rect.left() + inset, rect.bottom() - inset),
-        (rect.right() - inset, rect.bottom() - inset),
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(rect), 18, 18)
+    sheen = QLinearGradient(
+        QPointF(rect.left(), rect.top()),
+        QPointF(rect.left() + rect.width() * 0.5, rect.top() + rect.height() * 0.5),
     )
-    glow = QColor(color)
-    glow.setAlpha(28)
-    edge = QColor(color)
-    edge.setAlpha(72)
-    painter.setBrush(Qt.NoBrush)
-    for cx, cy in corners:
-        painter.setPen(QPen(glow, 2.4))
-        painter.drawPolygon(_hex_points(cx, cy, radius + 1.5))
-        painter.setPen(QPen(edge, 1.15))
-        painter.drawPolygon(_hex_points(cx, cy, radius))
-    painter.setPen(QPen(edge, 1.0))
-    left, top, right, bottom = rect.left() + 6, rect.top() + 6, rect.right() - 6, rect.bottom() - 6
-    painter.drawLine(left + 14, top, left + 30, top)
-    painter.drawLine(right - 30, top, right - 14, top)
-    painter.drawLine(left + 14, bottom, left + 30, bottom)
-    painter.drawLine(right - 30, bottom, right - 14, bottom)
-    painter.drawLine(left, top + 14, left, top + 28)
-    painter.drawLine(right, top + 14, right, top + 28)
-    painter.drawLine(left, bottom - 28, left, bottom - 14)
-    painter.drawLine(right, bottom - 28, right, bottom - 14)
-
+    sheen.setColorAt(0.0, QColor(255, 255, 255, 14))
+    sheen.setColorAt(1.0, QColor(255, 255, 255, 0))
+    painter.fillPath(path, sheen)
 
 def _paint_sparse_hives(painter: QPainter, rect, seeds) -> None:
     """A few irregular hex marks — not a filled honeycomb grid."""
@@ -606,7 +455,7 @@ def _paint_sparse_hives(painter: QPainter, rect, seeds) -> None:
     for cx, cy, radius, alpha, sides in seeds:
         x = rect.left() + cx * rect.width()
         y = rect.top() + cy * rect.height()
-        color = QColor(ACCENT_AMBER)
+        color = QColor(ACCENT)
         color.setAlpha(alpha)
         painter.setPen(QPen(color, 1.15))
         pts = _hex_points(x, y, radius)
@@ -659,7 +508,7 @@ def _paint_hive_field(painter: QPainter, rect, alpha: float = 0.20, radius: floa
     """Even honeycomb HUD — same opacity across the whole rectangle."""
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setBrush(Qt.NoBrush)
-    color = QColor(ACCENT_AMBER)
+    color = QColor(ACCENT)
     color.setAlphaF(alpha)
     painter.setPen(QPen(color, 1.05))
     dx = radius * 1.75
@@ -704,12 +553,34 @@ def _fullscreen_button(tooltip: str = "Maximize") -> QPushButton:
     return button
 
 
+def _clear_icon() -> QIcon:
+    """Trash-can glyph for the Clear button, drawn so it needs no asset file."""
+    size = 64
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+    pen = QPen(QColor("#f5c6ee"), 4.5)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(12, 18), QPointF(52, 18))                 # lid
+    p.drawRoundedRect(QRectF(25, 9, 14, 9), 3, 3)                # handle
+    body = QPolygonF([QPointF(17, 18), QPointF(47, 18), QPointF(44, 55), QPointF(20, 55)])
+    p.drawPolygon(body)
+    for x in (26, 32, 38):
+        p.drawLine(QPointF(x, 26), QPointF(x, 47))
+    p.end()
+    return QIcon(pix)
+
+
 class HiveField(QWidget):
     """Full-rectangle honeycomb behind a 2D viewer."""
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor("#08080c"))
+        painter.fillRect(self.rect(), QColor(BG_PANEL))
         _paint_hive_field(painter, self.rect(), alpha=0.20, radius=13.0)
         painter.end()
 
@@ -726,7 +597,7 @@ class HiveOverlay(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        _paint_hive_chrome(painter, self.rect().adjusted(1, 1, -1, -1), QColor(ACCENT_AMBER))
+        _paint_hive_chrome(painter, self.rect().adjusted(1, 1, -1, -1), QColor(ACCENT))
         painter.end()
 
 
@@ -735,7 +606,7 @@ class HivePanel(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._hive_color = QColor(ACCENT_AMBER)
+        self._hive_color = QColor(ACCENT)
         self._hive_overlay = HiveOverlay(self)
         self._hive_overlay.raise_()
 
@@ -753,8 +624,221 @@ class HivePanel(QFrame):
         self._hive_overlay.show()
 
 
+def _card_head(title: str, meta: str = ""):
+    """Mockup-style card header: title on the left, muted meta on the right."""
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(6)
+    t = QLabel(title)
+    t.setStyleSheet(
+        f"border: none; background: transparent; color: {TEXT_LIGHT}; font-size: 12px; font-weight: 600;"
+    )
+    row.addWidget(t)
+    row.addStretch(1)
+    m = QLabel(meta)
+    m.setStyleSheet(f"border: none; background: transparent; color: {TEXT_MUTED}; font-size: 11px;")
+    row.addWidget(m)
+    return row, t, m
+
+
+def _card_qss(name: str) -> str:
+    return (
+        f"QFrame#{name} {{ background-color: {BG_PANEL}; border: 1px solid {GLASS_EDGE}; border-radius: 18px; }}"
+        f"QFrame#{name} QLabel {{ border: none; background: transparent; }}"
+    )
+
+
+class _RoundedHost(QWidget):
+    """Clips its children to a rounded rectangle (dark scan viewport corners)."""
+
+    def __init__(self, radius: float = 12.0, parent=None):
+        super().__init__(parent)
+        self._radius = radius
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(self.rect()), self._radius, self._radius)
+        self.setMask(QRegion(path.toFillPolygon().toPolygon()))
+
+
+class _SegmentedToggle(QFrame):
+    """White pill with exclusive options, e.g. All / Tumour / Brain."""
+
+    changed = Signal(str)
+
+    def __init__(self, options, parent=None):
+        super().__init__(parent)
+        self.setObjectName("segToggle")
+        self.setStyleSheet(
+            f"QFrame#segToggle {{ background: #ffffff; border: 1px solid {GLASS_EDGE}; border-radius: 16px; }}"
+            f"QFrame#segToggle QPushButton {{ border: none; background: transparent; color: {TEXT_MUTED}; "
+            "padding: 0 12px; border-radius: 13px; font-size: 12px; }"
+            f"QFrame#segToggle QPushButton:hover {{ color: {TEXT_LIGHT}; }}"
+            f"QFrame#segToggle QPushButton:checked {{ background: #EAF2FF; color: {ACCENT}; font-weight: 600; }}"
+        )
+        self.setFixedHeight(32)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(3, 3, 3, 3)
+        row.setSpacing(0)
+        self._group = QButtonGroup(self)
+        self._group.setExclusive(True)
+        for i, text in enumerate(options):
+            b = QPushButton(text)
+            b.setCheckable(True)
+            b.setFixedHeight(26)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.setChecked(i == 0)
+            b.clicked.connect(lambda _=False, t=text: self.changed.emit(t))
+            self._group.addButton(b)
+            row.addWidget(b)
+            self._buttons = getattr(self, "_buttons", {})
+            self._buttons[text] = b
+
+    def select(self, text: str):
+        """Check an option from code (e.g. a hand gesture) and emit `changed`."""
+        b = getattr(self, "_buttons", {}).get(text)
+        if b is not None:
+            b.setChecked(True)
+            self.changed.emit(text)
+
+
+def _dot_icon(hex_color: str, alpha: float = 1.0) -> QIcon:
+    """Small round colour swatch used as a legend-chip icon."""
+    pix = QPixmap(18, 18)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+    c = QColor(hex_color)
+    c.setAlphaF(max(0.0, min(1.0, alpha)))
+    p.setPen(Qt.NoPen)
+    p.setBrush(c)
+    p.drawEllipse(QRectF(1, 1, 16, 16))
+    p.end()
+    return QIcon(pix)
+
+
+class _LegendPill(QFrame):
+    """Rounded legend under the 3D brain: one chip per detected tumour.
+    Clicking a chip focuses that tumour in 3D (the others fade back);
+    clicking it again shows all of them."""
+
+    focus_changed = Signal(int)   # tumour rank (1 = largest), 0 = show all
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("legendPill")
+        self.setStyleSheet(
+            f"QFrame#legendPill {{ background: #ffffff; border: 1px solid {GLASS_EDGE}; border-radius: 16px; }}"
+            "QFrame#legendPill QLabel { border: none; background: transparent; }"
+        )
+        self.setFixedHeight(34)
+        self._row = QHBoxLayout(self)
+        self._row.setContentsMargins(4, 3, 4, 3)
+        self._row.setSpacing(4)
+        self._chips = []          # [(button, rank, hex)]
+        self._focus = 0
+        self._hint = None
+        self.set_items([])
+
+    def set_items(self, items):
+        while self._row.count():
+            it = self._row.takeAt(0)
+            w = it.widget()
+            if w is not None:
+                w.hide()
+                w.deleteLater()
+        self._chips = []
+        for rank, (name, hex_color) in enumerate(items, start=1):
+            b = QPushButton(name)
+            b.setIconSize(QSize(9, 9))
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.setFixedHeight(26)
+            b.setToolTip(f"Focus {name} in 3D (click again to show all)")
+            b.clicked.connect(lambda _=False, r=rank: self._on_chip(r))
+            self._row.addWidget(b)
+            self._chips.append((b, rank, hex_color))
+        self._hint = QLabel("")
+        self._hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; padding: 0 8px 0 2px;")
+        self._row.addWidget(self._hint)
+        self.setVisible(bool(items))
+        self._set_focus(0, emit=True)
+
+    def _on_chip(self, rank: int):
+        self._set_focus(0 if rank == self._focus else rank, emit=True)
+
+    def focus_next(self):
+        """Tumour 1 -> 2 -> ... -> all. Returns (new rank, number of tumours)."""
+        n = len(self._chips)
+        if n == 0:
+            return 0, 0
+        nxt = self._focus + 1 if self._focus < n else 0
+        self._set_focus(nxt, emit=True)
+        return nxt, n
+
+    def clear_focus(self):
+        self._set_focus(0, emit=True)
+
+    def _set_focus(self, rank: int, emit: bool):
+        self._focus = rank
+        for b, r, hex_color in self._chips:
+            c = QColor(hex_color)
+            dimmed = bool(rank) and r != rank
+            b.setIcon(_dot_icon(hex_color, 0.35 if dimmed else 1.0))
+            if r == rank:
+                style = (f"QPushButton {{ color: {c.darker(140).name()}; font-weight: 600; "
+                         f"background: rgba({c.red()},{c.green()},{c.blue()},0.12); "
+                         f"border: 1px solid rgba({c.red()},{c.green()},{c.blue()},0.45); "
+                         "border-radius: 13px; padding: 0 10px; font-size: 12px; }")
+            else:
+                fg = "#A3AFC2" if dimmed else TEXT_LIGHT
+                style = (f"QPushButton {{ color: {fg}; background: transparent; border: 1px solid transparent; "
+                         "border-radius: 13px; padding: 0 10px; font-size: 12px; }"
+                         "QPushButton:hover { background: #F3F7FD; }")
+            b.setStyleSheet(style)
+        if self._hint is not None:
+            self._hint.setText("Click again to show all" if rank else "")
+            self._hint.setVisible(bool(rank))
+        if emit:
+            self.focus_changed.emit(rank)
+
+
+class _PresetChips(QFrame):
+    """Front · Side · Top buttons that fly the 3D camera to a standard view."""
+
+    chosen = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("presetChips")
+        self.setStyleSheet(
+            f"QFrame#presetChips {{ background: #ffffff; border: 1px solid {GLASS_EDGE}; border-radius: 16px; }}"
+            f"QFrame#presetChips QPushButton {{ border: none; background: transparent; color: {TEXT_MUTED}; "
+            "padding: 0 11px; border-radius: 13px; font-size: 12px; }"
+            f"QFrame#presetChips QPushButton:hover {{ color: {ACCENT}; background: #EAF2FF; }}"
+            f"QFrame#presetChips QPushButton:pressed {{ color: #ffffff; background: {ACCENT}; }}"
+        )
+        self.setFixedHeight(32)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(3, 3, 3, 3)
+        row.setSpacing(0)
+        for label, key, tip in (("Front", "front", "View from the front (anterior)"),
+                                ("Side", "side", "View from the patient's left side"),
+                                ("Top", "top", "View from above (superior)")):
+            b = QPushButton(label)
+            b.setFixedHeight(26)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.setToolTip(tip)
+            b.clicked.connect(lambda _=False, k=key: self.chosen.emit(k))
+            row.addWidget(b)
+
+
 class RootShell(QWidget):
-    """Dark page shell. Object name keeps the global stylesheet off child widgets."""
+    """Window background: soft off-white with two very faint blue washes.
+    Object name keeps the global stylesheet off children."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -762,195 +846,848 @@ class RootShell(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
         painter.fillRect(self.rect(), QColor(BG_PAGE))
+        painter.setPen(Qt.NoPen)
+        side = float(max(w, h))
+        for fx, fy, rad, alpha in ((0.08, 0.0, 0.45, 26), (0.95, 1.0, 0.40, 20)):
+            glow = QRadialGradient(QPointF(fx * w, fy * h), rad * side)
+            c = QColor(ACCENT)
+            c.setAlpha(alpha)
+            glow.setColorAt(0.0, c)
+            c2 = QColor(ACCENT)
+            c2.setAlpha(0)
+            glow.setColorAt(1.0, c2)
+            painter.setBrush(glow)
+            painter.drawEllipse(QPointF(fx * w, fy * h), rad * side, rad * side)
         painter.end()
 
 
-class AppHeader(QWidget):
-    """Circuit / hive header with generated cancer-detection brain art."""
+def _island_icon(kind: str, color: str = "#C9D6EE") -> QIcon:
+    """Thin line icons for the island buttons, drawn so they need no assets."""
+    size = 48
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+    pen = QPen(QColor(color), 3.6)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    if kind == "open":
+        path = QPainterPath()
+        path.moveTo(7, 14); path.lineTo(19, 14); path.lineTo(23, 18); path.lineTo(41, 18)
+        path.lineTo(41, 37); path.lineTo(7, 37); path.closeSubpath()
+        p.drawPath(path)
+    elif kind == "run":
+        p.setBrush(QColor(color))
+        p.drawPolygon(QPolygonF([QPointF(16, 11), QPointF(37, 24), QPointF(16, 37)]))
+    elif kind == "clear":
+        p.drawLine(QPointF(10, 14), QPointF(38, 14))
+        p.drawLine(QPointF(20, 9), QPointF(28, 9))
+        p.drawPolygon(QPolygonF([QPointF(14, 14), QPointF(34, 14), QPointF(32, 39), QPointF(16, 39)]))
+    elif kind == "refine":
+        p.drawLine(QPointF(12, 36), QPointF(30, 18))
+        p.drawLine(QPointF(34, 8), QPointF(34, 14))
+        p.drawLine(QPointF(31, 11), QPointF(37, 11))
+        p.drawLine(QPointF(40, 22), QPointF(40, 26))
+        p.drawLine(QPointF(38, 24), QPointF(42, 24))
+    elif kind == "check":
+        pen.setWidthF(5.0)
+        p.setPen(pen)
+        p.drawPolyline(QPolygonF([QPointF(13, 25), QPointF(21, 33), QPointF(36, 16)]))
+    elif kind == "gesture":
+        p.drawRoundedRect(QRectF(13, 24, 22, 16), 7, 7)          # palm
+        for x in (16, 21, 26, 31):
+            p.drawLine(QPointF(x, 24), QPointF(x, 11))            # fingers
+        p.drawLine(QPointF(13, 31), QPointF(8, 24))               # thumb
+    p.end()
+    return QIcon(pix)
 
-    def __init__(self):
+
+class DynamicIsland(QFrame):
+    """iPhone-style pill at the top of the window.
+
+    idle  -> case name · Open · Segment · Clear
+    busy  -> spinner · caption · progress bar (pill stretches wider)
+    done  -> green check · message, then springs back to idle
+    The pill animates its width with a slight overshoot, like the real thing."""
+
+    open_clicked = Signal()
+    refine_clicked = Signal()
+    sam_plane_chosen = Signal(str)
+    sam_action = Signal(str)
+    gesture_toggled = Signal(bool)
+
+    BTN_STYLE = (
+        "QPushButton {{ color: {fg}; background: {bg}; border: none; border-radius: 17px; "
+        "padding: 0 14px; font-size: 12px; font-weight: 600; }}"
+        "QPushButton:hover {{ background: {hover}; color: #ffffff; }}"
+        "QPushButton:pressed {{ background: {press}; }}"
+        "QPushButton:disabled {{ color: #4A5877; background: {dis}; }}"
+    )
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("island")
+        self.setFixedHeight(46)
+        self.setStyleSheet(
+            f"QFrame#island {{ background-color: {ISLAND_BG}; border-radius: 23px; }}"
+            "QFrame#island QLabel { background: transparent; border: none; }"
+        )
+        self._stack = QStackedLayout(self)
+        self._stack.setContentsMargins(0, 0, 0, 0)
+
+        # ---- idle page ----
+        idle = QWidget()
+        idle.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(idle)
+        row.setContentsMargins(16, 6, 6, 6)
+        row.setSpacing(4)
+        self._dot = QLabel()
+        self._dot.setFixedSize(7, 7)
+        row.addWidget(self._dot, 0, Qt.AlignVCenter)
+        row.addSpacing(4)
+        self.case_label = QLabel("No case loaded")
+        self.case_label.setStyleSheet(f"color: {ISLAND_TEXT}; font-size: 12px; font-weight: 500;")
+        row.addWidget(self.case_label)
+        row.addSpacing(10)
+        sep = QFrame()
+        sep.setFixedSize(1, 18)
+        sep.setStyleSheet("background: rgba(255,255,255,0.14); border: none;")
+        row.addWidget(sep, 0, Qt.AlignVCenter)
+        row.addSpacing(4)
+
+        ghost = self.BTN_STYLE.format(fg=ISLAND_TEXT, bg="transparent", hover="rgba(255,255,255,0.10)",
+                                      press="rgba(255,255,255,0.16)", dis="transparent")
+        primary = self.BTN_STYLE.format(fg="#ffffff", bg=ACCENT, hover="#2F7CF6",
+                                        press=ACCENT_DEEP, dis="rgba(255,255,255,0.06)")
+        self.open_btn = self._button("Open", "open", ghost, "Open a patient folder")
+        self.run_btn = self._button("Segment", "run", primary, "Run segmentation", icon_color="#ffffff")
+        self.refine_btn = self._button("Refine", "refine", ghost, "Refine the mask with MedSAM2")
+        self.clear_btn = self._button("Clear", "clear", ghost, "Clear the 2D and 3D views")
+        # Gesture toggle: OFF at startup. The webcam only starts when clicked.
+        self.gesture_btn = self._button(
+            "Gesture", "gesture",
+            ghost + f"QPushButton:checked {{ background: {ACCENT}; color: #ffffff; }}",
+            "Control the 3D brain with your hand (webcam)",
+        )
+        self.gesture_btn.setCheckable(True)
+        self.gesture_btn.setChecked(False)
+        self.gesture_btn.toggled.connect(self.gesture_toggled.emit)
+        for btn in (self.open_btn, self.run_btn, self.refine_btn, self.clear_btn, self.gesture_btn):
+            row.addWidget(btn)
+        self.open_btn.clicked.connect(self.open_clicked.emit)
+        self.refine_btn.clicked.connect(self.refine_clicked.emit)
+        self.refine_btn.setEnabled(False)
+        self._stack.addWidget(idle)
+        self._ghost_style = ghost
+        self._primary_style = primary
+        self.mode = "idle"
+
+        # ---- busy page ----
+        busy = QWidget()
+        busy.setStyleSheet("background: transparent;")
+        brow = QHBoxLayout(busy)
+        brow.setContentsMargins(16, 0, 20, 0)
+        brow.setSpacing(12)
+        self.spinner = ArcSpinner(diameter=18, color="#5AA2FF")
+        brow.addWidget(self.spinner, 0, Qt.AlignVCenter)
+        self.busy_label = QLabel("Working")
+        self.busy_label.setStyleSheet("color: #ffffff; font-size: 12px; font-weight: 500;")
+        brow.addWidget(self.busy_label)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(4)
+        self.progress.setStyleSheet(
+            "QProgressBar { border: none; border-radius: 2px; background: rgba(255,255,255,0.12); "
+            "min-height: 4px; max-height: 4px; }"
+            "QProgressBar::chunk { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+            "stop:0 #1F6FEB, stop:1 #5AA2FF); border-radius: 2px; }"
+        )
+        brow.addWidget(self.progress, 1)
+        self._stack.addWidget(busy)
+
+        # ---- done page ----
+        done = QWidget()
+        done.setStyleSheet("background: transparent;")
+        drow = QHBoxLayout(done)
+        drow.setContentsMargins(14, 0, 20, 0)
+        drow.setSpacing(10)
+        check = QLabel()
+        check.setFixedSize(20, 20)
+        check.setAlignment(Qt.AlignCenter)
+        check.setStyleSheet("background: #30A46C; border-radius: 10px;")
+        check.setPixmap(_island_icon("check", "#ffffff").pixmap(12, 12))
+        drow.addWidget(check, 0, Qt.AlignVCenter)
+        self.done_label = QLabel("Done")
+        self.done_label.setStyleSheet("color: #ffffff; font-size: 12px; font-weight: 500;")
+        drow.addWidget(self.done_label, 1)
+        self._stack.addWidget(done)
+
+        # ---- MedSAM2 page (index 3) ----
+        sam = QWidget()
+        sam.setStyleSheet("background: transparent;")
+        srow = QHBoxLayout(sam)
+        srow.setContentsMargins(16, 6, 6, 6)
+        srow.setSpacing(4)
+        sam_title = QLabel("MedSAM2")
+        sam_title.setStyleSheet("color: #ffffff; font-size: 12px; font-weight: 600;")
+        srow.addWidget(sam_title)
+        srow.addSpacing(8)
+        chip = (
+            f"QPushButton {{ color: {ISLAND_TEXT}; background: rgba(255,255,255,0.06); border: none; "
+            "border-radius: 13px; padding: 0 10px; font-size: 11px; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.12); color: #ffffff; }"
+            f"QPushButton:checked {{ background: {ACCENT}; color: #ffffff; font-weight: 600; }}"
+            "QPushButton:disabled { color: #4A5877; }"
+        )
+        self._plane_group = QButtonGroup(self)
+        self._plane_group.setExclusive(True)
+        self._plane_btns = {}
+        for name in ("Sagittal", "Axial", "Coronal"):
+            b = QPushButton(name)
+            b.setCheckable(True)
+            b.setFixedHeight(26)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.setStyleSheet(chip)
+            b.setToolTip(f"Place prompts on the {name.lower()} slice")
+            b.clicked.connect(lambda _=False, n=name: self.sam_plane_chosen.emit(n))
+            self._plane_group.addButton(b)
+            self._plane_btns[name] = b
+            srow.addWidget(b)
+        srow.addSpacing(10)
+        self.sam_hint = QLabel("")
+        self.sam_hint.setStyleSheet("color: #8FA0BF; font-size: 11px;")
+        srow.addWidget(self.sam_hint)
+        srow.addSpacing(8)
+        self.sam_btns = {}
+        for key, text, style, tip in (
+            ("undo", "Undo", ghost, "Remove the last prompt"),
+            ("clear", "Clear", ghost, "Remove all prompts"),
+            ("preview", "Preview", primary, "Run MedSAM2 with these prompts"),
+            ("accept", "Accept", primary, "Keep the refined mask and save it"),
+            ("discard", "Discard", ghost, "Throw the preview away"),
+            ("done", "Done", ghost, "Leave MedSAM2 editing"),
+        ):
+            b = QPushButton(text)
+            b.setFixedHeight(34)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFocusPolicy(Qt.NoFocus)
+            b.setToolTip(tip)
+            b.setStyleSheet(style)
+            b.clicked.connect(lambda _=False, k=key: self.sam_action.emit(k))
+            self.sam_btns[key] = b
+            srow.addWidget(b)
+        self.sam_btns["accept"].hide()
+        self.sam_btns["discard"].hide()
+        self._stack.addWidget(sam)
+
+        from PySide6.QtCore import QVariantAnimation, QEasingCurve
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(520)
+        self._anim.setEasingCurve(QEasingCurve.OutBack)
+        self._anim.valueChanged.connect(self._apply_width)
+        self._done_timer = QTimer(self)
+        self._done_timer.setSingleShot(True)
+        self._done_timer.timeout.connect(self.show_idle)
+        self.set_case(None)
+        self.setFixedWidth(self._idle_width())
+
+    def _button(self, text, icon_kind, style, tip, icon_color=ISLAND_TEXT):
+        btn = QPushButton(" " + text)
+        btn.setIcon(_island_icon(icon_kind, icon_color))
+        btn.setIconSize(QSize(15, 15))
+        btn.setFixedHeight(34)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFocusPolicy(Qt.NoFocus)
+        btn.setToolTip(tip)
+        btn.setStyleSheet(style)
+        return btn
+
+    def _page_width(self, index: int) -> int:
+        page = self._stack.widget(index)
+        page.layout().invalidate()
+        page.layout().activate()
+        return page.sizeHint().width()
+
+    def _idle_width(self) -> int:
+        return max(300, self._page_width(0))
+
+    def _home_index(self) -> int:
+        return 3 if self.mode == "sam" else 0
+
+    # ---- MedSAM2 mode ----
+    def enter_sam(self, plane: str):
+        self.mode = "sam"
+        self.set_sam_plane(plane)
+        self._done_timer.stop()
+        self._stack.setCurrentIndex(3)
+        self._animate_to(self._page_width(3))
+
+    def exit_sam(self):
+        was = self.mode
+        self.mode = "idle"
+        if was == "sam" and self._stack.currentIndex() == 3:
+            self.show_idle()
+
+    def set_sam_plane(self, plane: str):
+        b = self._plane_btns.get(plane)
+        if b is not None:
+            b.setChecked(True)
+
+    def update_sam(self, hint: str, enabled: dict, preview: bool):
+        changed = self.sam_hint.text() != hint
+        self.sam_hint.setText(hint)
+        for key, b in self.sam_btns.items():
+            want = (key in ("accept", "discard")) if preview else (key not in ("accept", "discard"))
+            if b.isHidden() == want:
+                b.setVisible(want)
+                changed = True
+            b.setEnabled(bool(enabled.get(key, True)))
+        for b in self._plane_btns.values():
+            b.setEnabled(not preview)
+        if changed and self._stack.currentIndex() == 3:
+            self._animate_to(self._page_width(3))
+
+    def _apply_width(self, value):
+        self.setFixedWidth(int(value))
+        parent = self.parentWidget()
+        if parent is not None and hasattr(parent, "place_island"):
+            parent.place_island()
+
+    def _animate_to(self, width: int):
+        self._anim.stop()
+        self._anim.setStartValue(self.width())
+        self._anim.setEndValue(int(width))
+        self._anim.start()
+
+    def set_case(self, case_id: Optional[str]):
+        loaded = bool(case_id)
+        text = case_id if loaded else "No case loaded"
+        if len(text) > 26:
+            text = text[:24] + "…"
+        self.case_label.setText(text)
+        self.case_label.setToolTip(case_id or "")
+        self._dot.setStyleSheet(
+            f"background: {'#30A46C' if loaded else '#4A5877'}; border-radius: 3px;"
+        )
+        if self._stack.currentIndex() == 0:
+            self._animate_to(self._idle_width())
+
+    def show_idle(self):
+        self._done_timer.stop()
+        self.spinner.stop()
+        home = self._home_index()
+        self._stack.setCurrentIndex(home)
+        self._animate_to(self._idle_width() if home == 0 else self._page_width(home))
+
+    def show_busy(self, text: str = "Working"):
+        self._done_timer.stop()
+        self.busy_label.setText(text)
+        self._stack.setCurrentIndex(1)
+        self.spinner.start()
+        self._animate_to(max(460, self._idle_width() + 20))
+
+    def show_done(self, text: str, hold_ms: int = 2400):
+        self.spinner.stop()
+        self.done_label.setText(text)
+        self._stack.setCurrentIndex(2)
+        fm = self.done_label.fontMetrics()
+        self._animate_to(max(260, fm.horizontalAdvance(text) + 90))
+        self._done_timer.start(hold_ms)
+
+
+class _IslandBusyProxy:
+    """Stands in for the old left-column busy bar: show()/hide() drive the island."""
+
+    def __init__(self, island: DynamicIsland):
+        self._island = island
+
+    def show(self, text: str = "Working"):
+        self._island.show_busy(text)
+
+    def hide(self):
+        self._island.show_idle()
+
+
+class CameraBubble(QWidget):
+    """Small mirrored webcam preview that pops out beside the Dynamic Island
+    while gesture control is on, so visitors can see themselves and their hand.
+    Springs open from the island's edge (same feel as the island) and tucks
+    back in when Gesture is switched off. Purely visual: clicks pass through."""
+
+    W, H = 128, 86          # visible bubble size
+    RADIUS = 16
+    MARGIN = 8              # room for the spring overshoot
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setFixedSize(self.W + 2 * self.MARGIN, self.H + 2 * self.MARGIN)
+        self._pix: Optional[QPixmap] = None
+        self._state = "Starting camera…"
+        self._progress = 0.0        # hold-to-confirm ring, 0-1
+        self._progress_label = ""
+        self._done_until = 0.0      # show the green tick until this time
+        self._t = 0.0       # 0 = tucked away, 1 = fully open
+        from PySide6.QtCore import QVariantAnimation, QEasingCurve
+        self._ease_in = QEasingCurve.OutBack
+        self._ease_out = QEasingCurve.InCubic
+        self._anim = QVariantAnimation(self)
+        self._anim.valueChanged.connect(self._on_anim)
+        self._anim.finished.connect(self._on_anim_done)
+        self.hide()
+
+    # ---- public API ----
+    def pop_in(self):
+        self._pix = None
+        self._state = "Starting camera…"
+        self.show()
+        self.raise_()
+        self._animate(1.0, 460, self._ease_in)
+
+    def pop_out(self):
+        if not self.isVisible():
+            return
+        self._animate(0.0, 220, self._ease_out)
+
+    def set_frame(self, img: QImage):
+        if self.isVisible():
+            self._pix = QPixmap.fromImage(img)
+            self.update()
+
+    def set_state(self, text: str):
+        self._state = text
+        self.update()
+
+    def set_progress(self, value: float, label: str = ""):
+        """Hold-to-confirm ring in the top-right corner (0 hides it)."""
+        self._progress = max(0.0, min(1.0, float(value)))
+        self._progress_label = label if self._progress > 0 else ""
+        self.update()
+
+    def flash_done(self, seconds: float = 1.0):
+        """Green tick + "Cooling down" after a gesture command fires."""
+        self._progress, self._progress_label = 0.0, ""
+        self._done_until = time.monotonic() + seconds
+        self.update()
+        QTimer.singleShot(int(seconds * 1000) + 30, self.update)
+
+    # ---- animation ----
+    def _animate(self, target: float, ms: int, curve):
+        self._anim.stop()
+        self._anim.setDuration(ms)
+        self._anim.setEasingCurve(curve)
+        self._anim.setStartValue(float(self._t))
+        self._anim.setEndValue(float(target))
+        self._anim.start()
+
+    def _on_anim(self, value):
+        self._t = float(value)
+        self.update()
+
+    def _on_anim_done(self):
+        if self._t <= 0.001:
+            self._t = 0.0
+            self._pix = None
+            self.hide()
+
+    # ---- painting ----
+    def paintEvent(self, event):
+        t = self._t
+        if t <= 0.001:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        m = self.MARGIN
+        p.setOpacity(max(0.0, min(1.0, t)))
+        # Grow out of the island's side: scale around the bubble's left-middle.
+        p.translate(m, m + self.H / 2)
+        p.scale(t, t)
+        p.translate(-m, -(m + self.H / 2))
+
+        outer = QRectF(m, m, self.W, self.H)
+        shell = QPainterPath()
+        shell.addRoundedRect(outer, self.RADIUS, self.RADIUS)
+        p.fillPath(shell, QColor(ISLAND_BG))
+
+        inner = outer.adjusted(3, 3, -3, -3)
+        clip = QPainterPath()
+        clip.addRoundedRect(inner, self.RADIUS - 3, self.RADIUS - 3)
+        p.save()
+        p.setClipPath(clip)
+        if self._pix is not None and not self._pix.isNull():
+            scaled = self._pix.scaled(inner.size().toSize(), Qt.KeepAspectRatioByExpanding,
+                                      Qt.SmoothTransformation)
+            p.drawPixmap(
+                int(inner.center().x() - scaled.width() / 2),
+                int(inner.center().y() - scaled.height() / 2),
+                scaled,
+            )
+        else:
+            p.fillRect(inner, QColor("#111A30"))
+        # Soft dark fade at the bottom so the status text stays readable.
+        fade = QLinearGradient(0, inner.bottom() - 30, 0, inner.bottom())
+        fade.setColorAt(0.0, QColor(10, 18, 36, 0))
+        fade.setColorAt(1.0, QColor(10, 18, 36, 190))
+        p.fillRect(QRectF(inner.left(), inner.bottom() - 30, inner.width(), 30), fade)
+        p.restore()
+
+        # "Live" dot, top-left.
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#FF453A"))
+        p.drawEllipse(QPointF(inner.left() + 10, inner.top() + 10), 3.5, 3.5)
+
+        done = time.monotonic() < self._done_until
+        corner = QPointF(inner.right() - 13, inner.top() + 13)
+        if self._progress > 0:
+            # Hold-to-confirm ring: grey track, blue arc filling clockwise.
+            ring = QRectF(corner.x() - 8, corner.y() - 8, 16, 16)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(10, 18, 36, 150))
+            p.drawEllipse(corner, 10.5, 10.5)
+            p.setPen(QPen(QColor(255, 255, 255, 60), 2.6))
+            p.setBrush(Qt.NoBrush)
+            p.drawEllipse(ring)
+            arc = QPen(QColor("#5AA2FF"), 2.6)
+            arc.setCapStyle(Qt.RoundCap)
+            p.setPen(arc)
+            p.drawArc(ring, 90 * 16, int(-self._progress * 360 * 16))
+        elif done:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor("#30A46C"))
+            p.drawEllipse(corner, 8, 8)
+            tick = QPen(QColor("#FFFFFF"), 1.8)
+            tick.setCapStyle(Qt.RoundCap)
+            tick.setJoinStyle(Qt.RoundJoin)
+            p.setPen(tick)
+            p.drawPolyline(QPolygonF([QPointF(corner.x() - 4, corner.y() + 0.2),
+                                      QPointF(corner.x() - 1.4, corner.y() + 2.6),
+                                      QPointF(corner.x() + 3.8, corner.y() - 2.6)]))
+
+        # Current gesture (or the pending command), bottom-left.
+        if self._progress > 0 and self._progress_label:
+            text = self._progress_label
+        elif done:
+            text = "Cooling down\u2026"
+        else:
+            text = self._state
+        p.setPen(QColor("#FFFFFF"))
+        font = QFont("Segoe UI", 8)
+        font.setWeight(QFont.DemiBold)
+        p.setFont(font)
+        p.drawText(inner.adjusted(8, 0, -6, -5), int(Qt.AlignLeft | Qt.AlignBottom),
+                   p.fontMetrics().elidedText(text, Qt.ElideRight, int(inner.width() - 14)))
+        p.end()
+
+
+# Gesture guide card: icon strokes in a 40x40 box (same drawings as the mockup).
+_GESTURE_ICONS = {
+    "palm": [("rect", 13, 20, 19, 13, 5), ("lines", (15, 20, 15, 8), (20, 20, 20, 6), (25, 20, 25, 7),
+                                           (30, 20, 30, 9), (13, 28, 7, 21))],
+    "ok": [("rect", 13, 20, 19, 13, 5), ("circle", 13, 16, 3.6), ("lines", (20, 20, 20, 6), (25, 20, 25, 7),
+                                                                    (30, 20, 30, 9))],
+    "fist": [("rect", 13, 18, 19, 15, 6), ("lines", (15, 18, 15, 15), (20, 18, 20, 14), (25, 18, 25, 14),
+                                           (30, 18, 30, 15), (13, 27, 17, 24))],
+    "point": [("rect", 13, 20, 19, 13, 5), ("lines", (15, 20, 15, 5), (20, 20, 20, 16), (25, 20, 25, 16),
+                                            (30, 20, 30, 16), (13, 27, 17, 24))],
+    "peace": [("rect", 13, 20, 19, 13, 5), ("lines", (15, 20, 12, 6), (21, 20, 23, 6), (25, 20, 25, 16),
+                                            (30, 20, 30, 16), (13, 27, 17, 24))],
+    "thumbs": [("rect", 16, 19, 16, 15, 6), ("lines", (17, 19, 17, 6), (22, 22, 29, 22), (22, 27, 29, 27))],
+    "three": [("rect", 13, 20, 19, 13, 5), ("lines", (15, 20, 15, 8), (20, 20, 20, 6), (25, 20, 25, 7),
+                                            (30, 20, 30, 16), (13, 27, 17, 24))],
+    "reset": [("dashcircle", 22, 20, 17), ("rect", 14, 21, 16, 11, 4),
+              ("lines", (16, 21, 16, 11), (20, 21, 20, 9), (24, 21, 24, 10), (28, 21, 28, 12))],
+}
+_GESTURE_GUIDE_ITEMS = (            # icon, title, how, new?
+    ("palm", "Rotate", "Open palm, move", False),
+    ("ok", "Zoom", "OK sign, up / down", False),
+    ("fist", "Hold", "Fist", False),
+    ("point", "Slice", "Point; hold = next plane", True),
+    ("peace", "View mode", "Peace sign, hold", True),
+    ("thumbs", "Next view", "Thumbs up, hold", True),
+    ("three", "Next tumour", "Three fingers, hold", True),
+    ("reset", "Reset", "Palm still, 1.5 s", True),
+)
+
+
+class GestureGuideCard(QWidget):
+    """Dark card listing every hand gesture. Slides out under the camera
+    bubble the first time Gesture is switched on and hides itself after
+    SHOW_SECONDS. Purely visual: clicks pass through.
+
+    It is a small frameless floating window rather than a child widget: the
+    3D views are web views, which Windows draws as native windows that an
+    ordinary child widget cannot sit on top of (it would appear behind them)."""
+
+    W, H = 372, 300
+    MARGIN = 8
+    SHOW_SECONDS = 30
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus
+                         | Qt.WindowTransparentForInput | Qt.NoDropShadowWindowHint)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setFixedSize(self.W + 2 * self.MARGIN, self.H + 2 * self.MARGIN)
+        self._t = 0.0
+        self._left = self.SHOW_SECONDS
+        from PySide6.QtCore import QVariantAnimation, QEasingCurve
+        self._anim = QVariantAnimation(self)
+        self._anim.valueChanged.connect(self._on_anim)
+        self._anim.finished.connect(self._on_anim_done)
+        self._ease_in, self._ease_out = QEasingCurve.OutCubic, QEasingCurve.InCubic
+        self._tick = QTimer(self)
+        self._tick.setInterval(1000)
+        self._tick.timeout.connect(self._countdown)
+        self.hide()
+
+    def pop_in(self):
+        self._left = self.SHOW_SECONDS
+        self.show()
+        self.raise_()
+        self._animate(1.0, 320, self._ease_in)
+        self._tick.start()
+
+    def pop_out(self):
+        self._tick.stop()
+        if self.isVisible():
+            self._animate(0.0, 200, self._ease_out)
+
+    def _countdown(self):
+        self._left -= 1
+        if self._left <= 0:
+            self.pop_out()
+        self.update()
+
+    def _animate(self, target, ms, curve):
+        self._anim.stop()
+        self._anim.setDuration(ms)
+        self._anim.setEasingCurve(curve)
+        self._anim.setStartValue(float(self._t))
+        self._anim.setEndValue(float(target))
+        self._anim.start()
+
+    def _on_anim(self, value):
+        self._t = float(value)
+        self.update()
+
+    def _on_anim_done(self):
+        if self._t <= 0.001:
+            self._t = 0.0
+            self.hide()
+
+    @staticmethod
+    def _draw_icon(p: QPainter, key: str, box: QRectF, color: QColor):
+        s = box.width() / 40.0
+
+        def pt(x, y):
+            return QPointF(box.left() + x * s, box.top() + y * s)
+
+        pen = QPen(color, 2.4 * s)
+        pen.setCapStyle(Qt.RoundCap)
+        p.setBrush(Qt.NoBrush)
+        for shape in _GESTURE_ICONS[key]:
+            kind = shape[0]
+            if kind == "rect":
+                _, x, y, w, h, r = shape
+                p.setPen(pen)
+                p.drawRoundedRect(QRectF(pt(x, y), pt(x + w, y + h)), r * s, r * s)
+            elif kind == "circle":
+                _, cx, cy, r = shape
+                p.setPen(pen)
+                p.drawEllipse(pt(cx, cy), r * s, r * s)
+            elif kind == "dashcircle":
+                _, cx, cy, r = shape
+                dash = QPen(color, 1.6 * s)
+                dash.setStyle(Qt.DashLine)
+                p.setPen(dash)
+                p.drawEllipse(pt(cx, cy), r * s, r * s)
+            else:
+                p.setPen(pen)
+                for x1, y1, x2, y2 in shape[1:]:
+                    p.drawLine(pt(x1, y1), pt(x2, y2))
+
+    def paintEvent(self, event):
+        t = self._t
+        if t <= 0.001:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setOpacity(max(0.0, min(1.0, t)))
+        p.translate(0, (1.0 - t) * -10)            # slides down into place
+        m = self.MARGIN
+        card = QRectF(m, m, self.W, self.H)
+        path = QPainterPath()
+        path.addRoundedRect(card, 18, 18)
+        p.fillPath(path, QColor(ISLAND_BG))
+
+        p.setPen(QColor("#FFFFFF"))
+        title = QFont("Segoe UI", 10)
+        title.setWeight(QFont.DemiBold)
+        p.setFont(title)
+        head = QRectF(m + 14, m + 12, self.W - 28, 20)
+        p.drawText(head, int(Qt.AlignLeft | Qt.AlignVCenter), "Hand gestures")
+        small = QFont("Segoe UI", 8)
+        p.setFont(small)
+        p.setPen(QColor("#8FA0BF"))
+        p.drawText(head, int(Qt.AlignRight | Qt.AlignVCenter), f"Hides in {max(0, self._left)} s")
+
+        col_w = (self.W - 28 - 8) / 2.0
+        row_h, gap = 46.0, 8.0
+        name_f = QFont("Segoe UI", 9)
+        name_f.setWeight(QFont.DemiBold)
+        how_f = QFont("Segoe UI", 8)
+        for n, (icon, name, how, new) in enumerate(_GESTURE_GUIDE_ITEMS):
+            col, row = n % 2, n // 2
+            x = m + 14 + col * (col_w + 8)
+            y = m + 42 + row * (row_h + gap)
+            cell = QRectF(x, y, col_w, row_h)
+            cp = QPainterPath()
+            cp.addRoundedRect(cell, 11, 11)
+            p.fillPath(cp, QColor(31, 111, 235, 56) if new else QColor(255, 255, 255, 13))
+            self._draw_icon(p, icon, QRectF(x + 8, y + 8, 30, 30),
+                            QColor("#FFFFFF") if new else QColor("#9CC7FF"))
+            p.setPen(QColor("#FFFFFF"))
+            p.setFont(name_f)
+            p.drawText(QRectF(x + 46, y + 6, col_w - 50, 18), int(Qt.AlignLeft | Qt.AlignVCenter), name)
+            p.setPen(QColor("#C9D6EE") if new else QColor("#8FA0BF"))
+            p.setFont(how_f)
+            p.drawText(QRectF(x + 46, y + 23, col_w - 50, 16), int(Qt.AlignLeft | Qt.AlignVCenter), how)
+        p.setPen(QColor("#8FA0BF"))
+        p.setFont(small)
+        p.drawText(QRectF(m + 14, card.bottom() - 26, self.W - 28, 16), int(Qt.AlignLeft | Qt.AlignVCenter),
+                   "Highlighted = new \u00b7 hold command poses until the ring fills")
+        p.end()
+
+
+class AppHeader(QWidget):
+    """Minimal header: blue app mark + title on the left, the Dynamic Island
+    centred, and model / device status on the right."""
+
+    TITLE = "NeuroVista"
+    SUBTITLE = "A.I. copilot for cancer detection and patient survival prediction"
+
+    def __init__(self, island: DynamicIsland):
         super().__init__()
-<<<<<<< Updated upstream
-        self.setFixedHeight(86)
-=======
-<<<<<<< HEAD
-        self.setFixedHeight(86)
-=======
-        self.setFixedHeight(60)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
+        self.setFixedHeight(72)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self._brain = QPixmap(str(_HEADER_BRAIN_PATH))
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.island = island
+        island.setParent(self)
+        island.show()
+        try:
+            self._device = "CUDA" if torch.cuda.is_available() else "CPU"
+        except Exception:
+            self._device = "CPU"
+        try:
+            self._model_ok = Path(MODEL_PATH).is_file()
+        except Exception:
+            self._model_ok = False
+
+    def place_island(self):
+        self.island.move((self.width() - self.island.width()) // 2, (self.height() - self.island.height()) // 2)
+        self.update()
+        follow = getattr(self, "on_island_moved", None)   # keeps the camera bubble beside the island
+        if follow is not None:
+            follow()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.place_island()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.place_island()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.TextAntialiasing)
         rect = self.rect()
+        h = rect.height()
 
-        wash = QLinearGradient(0, 0, rect.width(), 0)
-        wash.setColorAt(0.0, QColor("#0c0a08"))
-        wash.setColorAt(0.55, QColor("#16120e"))
-        wash.setColorAt(1.0, QColor("#0a0a0c"))
-        painter.fillRect(rect, wash)
-
-        dim = QColor(ACCENT_AMBER)
-        dim.setAlpha(55)
-        lit = QColor(ACCENT_AMBER)
-        lit.setAlpha(130)
-        painter.setPen(QPen(dim, 1))
-        painter.drawLine(18, 16, int(rect.width() * 0.48), 16)
-        painter.drawLine(18, rect.height() - 14, int(rect.width() * 0.40), rect.height() - 14)
-        painter.setPen(QPen(lit, 1.1))
-        painter.drawLine(28, 16, 28, rect.height() - 14)
+        # App mark: small rounded blue tile with a "neuron" glyph.
+        mark = QRectF(SPACING + 2, (h - 26) / 2, 26, 26)
+        painter.setPen(Qt.NoPen)
+        tile = QLinearGradient(mark.topLeft(), mark.bottomRight())
+        tile.setColorAt(0.0, QColor(ACCENT))
+        tile.setColorAt(1.0, QColor("#5AA2FF"))
+        painter.setBrush(tile)
+        painter.drawRoundedRect(mark, 8, 8)
+        c = mark.center()
+        painter.setPen(QPen(QColor(255, 255, 255, 240), 1.6))
         painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(lit, 1))
-        painter.drawPolygon(_hex_points(28, 16, 4.5))
-        painter.drawPolygon(_hex_points(28, rect.height() - 14, 4.5))
+        painter.drawEllipse(c, 3.6, 3.6)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 225))
+        for ang in (45, 135, 225, 315):
+            r = math.radians(ang)
+            painter.drawEllipse(QPointF(c.x() + 7.4 * math.cos(r), c.y() + 7.4 * math.sin(r)), 1.4, 1.4)
 
-        brain_w = 0
-        bx = rect.right()
-        if not self._brain.isNull():
-            brain = self._brain.scaled(
-<<<<<<< Updated upstream
-                min(280, int(rect.width() * 0.30)),
-                rect.height() - 4,
-=======
-<<<<<<< HEAD
-                min(280, int(rect.width() * 0.30)),
-                rect.height() - 4,
-=======
-                min(170, int(rect.width() * 0.30)),
-                min(50, rect.height() - 4),
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation,
-            )
-            bx = rect.width() - brain.width() - 4
-            by = (rect.height() - brain.height()) // 2
-            painter.drawPixmap(bx, by, brain)
-            brain_w = brain.width()
+        # Left text block must stop before the island.
+        left_limit = max(60, self.island.x() - 16)
+        x = int(mark.right() + 12)
+        title_font = QFont("Segoe UI", 13, QFont.DemiBold)
+        painter.setFont(title_font)
+        tm = painter.fontMetrics()
+        ty = int(h / 2 - 2)
+        painter.setPen(QColor(TEXT_LIGHT))
+        painter.drawText(x, ty, tm.elidedText(self.TITLE, Qt.ElideRight, left_limit - x))
+        sub_font = QFont("Segoe UI", 8)
+        painter.setFont(sub_font)
+        sm = painter.fontMetrics()
+        painter.setPen(QColor(TEXT_MUTED))
+        painter.drawText(x, ty + sm.ascent() + 4, sm.elidedText(self.SUBTITLE, Qt.ElideRight, max(0, left_limit - x)))
 
-        _paint_sparse_hives(
-            painter,
-            rect,
-            (
-                (0.58, 0.28, 9, 70, 6),
-                (0.64, 0.62, 7, 46, 4),
-                (0.70, 0.22, 11, 38, 3),
-                (0.74, 0.70, 8, 58, 5),
-                (0.52, 0.72, 6, 40, 6),
-                (0.80, 0.40, 5, 52, 4),
-            ),
-        )
-        painter.setPen(QPen(QColor(255, 159, 28, 70), 1))
-        painter.drawLine(int(rect.width() * 0.58), int(rect.height() * 0.28), bx + 10, rect.height() // 2)
-
-        title_end = self._draw_tech_title(painter, rect.adjusted(44, 0, -brain_w - 16, 0))
-        painter.setPen(QPen(QColor(255, 159, 28, 160), 1.3))
-        painter.drawLine(48, rect.height() - 18, max(title_end + 8, 220), rect.height() - 18)
-
-        painter.setPen(QPen(QColor(ACCENT_AMBER), 1.4))
-        painter.drawLine(0, rect.height() - 1, rect.width(), rect.height() - 1)
+        # Right: model + device status.
+        status_font = QFont("Segoe UI", 9)
+        painter.setFont(status_font)
+        fm = painter.fontMetrics()
+        model_txt = "Model ready" if self._model_ok else "No checkpoint"
+        right = rect.width() - SPACING - 4
+        dev_w = fm.horizontalAdvance(self._device)
+        painter.setPen(QColor(TEXT_MUTED))
+        baseline = int(h / 2 + fm.ascent() / 2 - 1)
+        painter.drawText(right - dev_w, baseline, self._device)
+        mx = right - dev_w - 16 - fm.horizontalAdvance(model_txt)
+        if mx > self.island.geometry().right() + 12:
+            painter.drawText(mx, baseline, model_txt)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor("#30A46C" if self._model_ok else "#F5A524"))
+            painter.drawEllipse(QPointF(mx - 9, h / 2), 3.5, 3.5)
         painter.end()
-
-    def _draw_tech_title(self, painter: QPainter, rect) -> int:
-        parts = (
-            ("A.I. ", True),
-            ("COPILOT FOR ", False),
-            ("CANCER DETECTION", True),
-            (" AND ", False),
-            ("PATIENT SURVIVAL PREDICTION", True),
-        )
-        hot = QColor(ACCENT_AMBER)
-        glow = QColor(255, 176, 50, 110)
-        cream = QColor("#ffd27a")
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-        size = 13
-        text_width = rect.width()
-        while size >= 9:
-            font = QFont("Segoe UI", size, QFont.DemiBold)
-            font.setLetterSpacing(QFont.AbsoluteSpacing, 1.1)
-<<<<<<< Updated upstream
-=======
-=======
-        size = 11
-        text_width = rect.width()
-        while size >= 8:
-            font = QFont("Segoe UI", size, QFont.DemiBold)
-            font.setLetterSpacing(QFont.AbsoluteSpacing, 0.9)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
-            painter.setFont(font)
-            metrics = painter.fontMetrics()
-            full = "".join(text for text, _ in parts)
-            if metrics.horizontalAdvance(full) + 22 <= text_width:
-                break
-            size -= 1
-        metrics = painter.fontMetrics()
-        y = rect.center().y() + metrics.ascent() / 2 - 2
-        x = rect.left()
-        painter.setPen(QPen(QColor(ACCENT_AMBER), 1.2))
-        painter.setBrush(QColor(255, 159, 28, 40))
-        painter.drawPolygon(_hex_points(x + 6, y - metrics.ascent() * 0.35, 6))
-        x += 18
-        for text, accent in parts:
-            color = hot if accent else cream
-            painter.setPen(QColor(255, 159, 28, 70))
-            painter.drawText(int(x + 1), int(y + 1), text)
-            painter.setPen(color)
-            painter.drawText(int(x), int(y), text)
-            x += metrics.horizontalAdvance(text)
-        return int(x)
-
 
 class TechRule(QWidget):
     """Horizontal circuit separator used above the UniKL credit."""
 
     def __init__(self):
         super().__init__()
-<<<<<<< Updated upstream
-        self.setFixedHeight(14)
-=======
-<<<<<<< HEAD
-        self.setFixedHeight(14)
-=======
         self.setFixedHeight(10)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         y = self.height() / 2
         w = self.width()
-        amber = QColor(ACCENT_AMBER)
-        amber.setAlpha(160)
-        dim = QColor(ACCENT_AMBER)
-        dim.setAlpha(60)
-        painter.setPen(QPen(dim, 1))
-        painter.drawLine(8, y, w - 8, y)
-        painter.setPen(QPen(amber, 1.2))
-        painter.drawLine(28, y, w - 28, y)
-        painter.setBrush(QColor(ACCENT_AMBER))
-        for x in (10, w / 2, w - 10):
-            painter.setPen(QPen(amber, 1))
-<<<<<<< Updated upstream
-            painter.drawPolygon(_hex_points(x, y, 4.2))
-=======
-<<<<<<< HEAD
-            painter.drawPolygon(_hex_points(x, y, 4.2))
-=======
-            painter.drawPolygon(_hex_points(x, y, 3.2))
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
+        line = QLinearGradient(0, 0, w, 0)
+        line.setColorAt(0.0, QColor(31, 111, 235, 0))
+        line.setColorAt(0.5, QColor(31, 111, 235, 90))
+        line.setColorAt(1.0, QColor(31, 111, 235, 0))
+        painter.setPen(QPen(line, 1))
+        painter.drawLine(QPointF(8, y), QPointF(w - 8, y))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(ACCENT_SOFT))
+        painter.drawEllipse(QPointF(w / 2, y), 2.2, 2.2)
         painter.end()
-
 
 class SquadCredit(QWidget):
     """Developed-by strip: circuit rule, UniKL logo, A.I. Squad remark."""
@@ -959,18 +1696,8 @@ class SquadCredit(QWidget):
         super().__init__()
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout = QVBoxLayout(self)
-<<<<<<< Updated upstream
-        layout.setContentsMargins(2, 18, 2, 4)
-        layout.setSpacing(8)
-=======
-<<<<<<< HEAD
-        layout.setContentsMargins(2, 18, 2, 4)
-        layout.setSpacing(8)
-=======
         layout.setContentsMargins(2, 8, 2, 4)
         layout.setSpacing(6)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         layout.addWidget(TechRule())
 
         row = QHBoxLayout()
@@ -978,33 +1705,17 @@ class SquadCredit(QWidget):
         row.setSpacing(8)
 
         logo = QLabel()
-        logo.setStyleSheet("background: transparent; border: none;")
+        logo.setStyleSheet(f"background: {ISLAND_BG}; border: none; border-radius: 8px; padding: 4px 6px;")
         pix = _tight_pixmap(_UNIKL_LOGO_PATH)
         if not pix.isNull():
-<<<<<<< Updated upstream
-            logo.setPixmap(pix.scaled(108, 44, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-=======
-<<<<<<< HEAD
-            logo.setPixmap(pix.scaled(108, 44, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-=======
             logo.setPixmap(pix.scaled(72, 30, Qt.KeepAspectRatio, Qt.SmoothTransformation))
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         row.addWidget(logo, 0, Qt.AlignVCenter)
 
         copy = QLabel("Developed by\nUniKL MIIT A.I. Squad")
         copy.setWordWrap(True)
         copy.setStyleSheet(
-            f"border: none; background: transparent; color: {ACCENT_AMBER_SOFT}; "
-<<<<<<< Updated upstream
-            f"font-size: 9px; font-weight: 600; letter-spacing: 0.4px;"
-=======
-<<<<<<< HEAD
-            f"font-size: 9px; font-weight: 600; letter-spacing: 0.4px;"
-=======
+            f"border: none; background: transparent; color: {TEXT_MUTED}; "
             f"font-size: 8px; font-weight: 600; letter-spacing: 0.4px;"
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         )
         row.addWidget(copy, 1)
         layout.addLayout(row)
@@ -1014,11 +1725,11 @@ class TechLabel(QLabel):
     """Yellowish-orange HUD label for the 3D panels."""
 
     def __init__(self, text: str):
-        super().__init__(f"⬡  {text.upper()}")
+        super().__init__(text.upper())
         self.setAlignment(Qt.AlignCenter)
         self.setStyleSheet(
-            f"border: none; color: {ACCENT_AMBER}; font-size: 11px; "
-            f"font-weight: 700; letter-spacing: 1.5px; background: transparent;"
+            f"border: none; color: {TEXT_MUTED}; font-size: 10px; "
+            f"font-weight: 700; letter-spacing: 1.6px; background: transparent;"
         )
 
 
@@ -1035,7 +1746,7 @@ class _RecordRow(QWidget):
         bullet.setFixedWidth(12)
         bullet.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         bullet.setStyleSheet(
-            f"border: none; color: {ACCENT_AMBER}; font-size: 16px; "
+            f"border: none; color: {ACCENT}; font-size: 16px; "
             f"font-weight: 700; background: transparent; padding-top: 1px;"
         )
         outer.addWidget(bullet)
@@ -1059,7 +1770,7 @@ class _RecordRow(QWidget):
         outer.addLayout(text_col, stretch=1)
 
     def _apply_value_style(self, filled: bool) -> None:
-        color = TEXT_LIGHT if filled else "#636366"
+        color = TEXT_LIGHT if filled else TEXT_DIM
         self.value.setStyleSheet(
             f"border: none; color: {color}; font-size: 13px; font-weight: 600; "
             f"background: transparent; padding: 0;"
@@ -1071,19 +1782,7 @@ class _RecordRow(QWidget):
         self._apply_value_style(filled)
 
 
-<<<<<<< Updated upstream
-class PatientRecordPanel(HivePanel):
-    """Compact card: distinct header bar + bulleted facts."""
-=======
-<<<<<<< HEAD
-class PatientRecordPanel(HivePanel):
-    """Compact card: distinct header bar + bulleted facts."""
-=======
 REPORT_MAX_TUMOR_ROWS = 5   # rows shown in the Report card; the rest are summarised
-# Predictions below this physical size are overwhelmingly interpolation /
-# threshold specks, not useful lesions.  Applying it before *any* view keeps
-# the reported count, 2D overlays, and 3D meshes in agreement.
-MIN_PREDICTED_COMPONENT_CM3 = 0.15
 
 
 class _TumorRow(QWidget):
@@ -1108,8 +1807,8 @@ class _TumorRow(QWidget):
 
         name = QLabel(color_name)
         name.setStyleSheet(
-            f"border: none; background: transparent; color: {color_hex}; "
-            "font-size: 11px; font-weight: 700;"
+            f"border: none; background: transparent; color: {TEXT_LIGHT}; "
+            "font-size: 11px; font-weight: 600;"
         )
         line.addWidget(name)
         line.addStretch(1)
@@ -1120,42 +1819,50 @@ class _TumorRow(QWidget):
         )
         line.addWidget(vol)
 
-        # Mean voxel probability is not a clinical confidence score, so do
-        # not present it as a percentage or a progress bar.
         if confidence is None:
-            refined = QLabel("Refined")
-            refined.setToolTip("Mask edited with MedSAM2")
-            refined.setStyleSheet(
-                f"border: none; background: transparent; color: {TEXT_MUTED}; "
-                "font-size: 10px; font-weight: 700;"
-            )
-            line.addWidget(refined)
+            conf_text, conf_color = "Refined", TEXT_MUTED
+            tip = "Mask edited with MedSAM2 — no model confidence for this region"
+        else:
+            conf_text, conf_color = f"{confidence * 100:.1f}%", TEXT_LIGHT
+            tip = "Mean model probability across this tumor's voxels"
+        conf = QLabel(conf_text)
+        conf.setToolTip(tip)
+        conf.setMinimumWidth(40)
+        conf.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        conf.setStyleSheet(
+            f"border: none; background: transparent; color: {conf_color}; "
+            "font-size: 11px; font-weight: 700;"
+        )
+        line.addWidget(conf)
         col.addLayout(line)
+
+        if confidence is not None:
+            bar = QProgressBar()
+            bar.setRange(0, 1000)
+            bar.setValue(int(round(max(0.0, min(1.0, confidence)) * 1000)))
+            bar.setTextVisible(False)
+            bar.setFixedHeight(3)
+            bar.setStyleSheet(
+                "QProgressBar { border: none; border-radius: 1px; background-color: #EEF2F8; "
+                "min-height: 3px; max-height: 3px; }"
+                f"QProgressBar::chunk {{ background-color: {color_hex}; border-radius: 1px; }}"
+            )
+            col.addWidget(bar)
 
 
 class PatientRecordPanel(HivePanel):
     """Report card: total tumor volume + one row per detected tumor, listed
     in COMPONENT_PALETTE order (largest first), each with its own model
     confidence and volume."""
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 
     def __init__(self):
         super().__init__()
         self.setFrameShape(QFrame.NoFrame)
         self.setStyleSheet(
-            f"QFrame {{ border: none; border-radius: 14px; background-color: {BG_PANEL}; }}"
+            f"QFrame {{ border: 1px solid {GLASS_EDGE}; border-radius: 18px; background-color: {BG_PANEL}; }}"
         )
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-<<<<<<< Updated upstream
-        self.setMinimumHeight(132)
-=======
-<<<<<<< HEAD
-        self.setMinimumHeight(132)
-=======
         self.setMinimumHeight(0)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1163,72 +1870,17 @@ class PatientRecordPanel(HivePanel):
 
         header = QFrame()
         header.setStyleSheet(
-            f"QFrame {{ background-color: #3a3a3c; border: none; "
-            f"border-top-left-radius: 14px; border-top-right-radius: 14px; "
-            f"border-bottom: 2px solid {ACCENT_AMBER}; }}"
+            "QFrame { background: transparent; border: none; }"
+        )
+        self.setObjectName("reportCard")
+        self.setStyleSheet(
+            f"QFrame#reportCard {{ border: 1px solid {GLASS_EDGE}; border-radius: 18px; background-color: {BG_PANEL}; }}"
         )
         header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(14, 9, 14, 8)
-<<<<<<< Updated upstream
-        title = QLabel("PATIENT RECORD")
-=======
-<<<<<<< HEAD
-        title = QLabel("PATIENT RECORD")
-=======
-        title = QLabel("REPORT")
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
-        title.setStyleSheet(
-            f"border: none; color: {ACCENT_AMBER_SOFT}; font-size: 11px; "
-            f"font-weight: 700; letter-spacing: 1.4px; background: transparent;"
-        )
-        header_layout.addWidget(title)
+        header_layout.setContentsMargins(14, 12, 14, 2)
+        head_row, _, self.report_meta = _card_head("Report Summary", "")
+        header_layout.addLayout(head_row)
         layout.addWidget(header)
-
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-        body = QWidget()
-        body.setStyleSheet("background: transparent;")
-        body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(14, 10, 10, 12)
-        body_layout.setSpacing(8)
-
-        self.case_field = _RecordRow("Patient ID")
-        self.survival_field = _RecordRow("Overall survival")
-        self.volume_field = _RecordRow("Tumor volume")
-        body_layout.addWidget(self.case_field)
-        body_layout.addWidget(self.survival_field)
-        body_layout.addWidget(self.volume_field)
-        body.setMinimumHeight(210)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        scroll.setWidget(body)
-        scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-            "QScrollArea > QWidget > QWidget { background: transparent; }"
-        )
-        scroll.viewport().setStyleSheet("background: transparent;")
-        layout.addWidget(scroll, 1)
-        self._record_scroll = scroll
-<<<<<<< Updated upstream
-=======
-=======
-        patient_details = QWidget()
-        patient_details.setStyleSheet("background: transparent;")
-        details_layout = QVBoxLayout(patient_details)
-        details_layout.setContentsMargins(12, 8, 12, 4)
-        details_layout.setSpacing(5)
-        self.case_field = _RecordRow("Patient ID")
-        self.survival_field = _RecordRow("Recorded survival (metadata)")
-        details_layout.addWidget(self.case_field)
-        details_layout.addWidget(self.survival_field)
-        layout.addWidget(patient_details)
 
         # Pinned summary tiles — stay put while the tumor list scrolls.
         summary_wrap = QWidget()
@@ -1283,7 +1935,7 @@ class PatientRecordPanel(HivePanel):
         placeholder = QLabel(text)
         placeholder.setWordWrap(True)
         placeholder.setStyleSheet(
-            "border: none; background: transparent; color: #636366; "
+            "border: none; background: transparent; color: " + TEXT_DIM + "; "
             "font-size: 11px; font-weight: 600;"
         )
         self._tumor_list.addWidget(placeholder)
@@ -1293,29 +1945,6 @@ class PatientRecordPanel(HivePanel):
         self.tumor_caption.setText("Detected tumors")
         self._clear_tumor_rows()
         self._set_placeholder("—")
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
-
-    def set_case(self, case_id: str, survival_days: Optional[float]) -> None:
-        self.case_field.set_value(case_id, True)
-        if survival_days is None:
-            self.survival_field.set_value("No metadata label", False)
-        else:
-            self.survival_field.set_value(format_survival(survival_days), True)
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-        self.volume_field.set_value("—", False)
-
-    def set_volume(self, tumor_cm3: Optional[float]) -> None:
-        if tumor_cm3 is None:
-            self.volume_field.set_value("—", False)
-        else:
-            self.volume_field.set_value(f"{tumor_cm3:.2f} cm\u00b3", True)
-<<<<<<< Updated upstream
-=======
-=======
 
     def set_tumors(self, components: list, total_cm3: Optional[float]) -> None:
         """components: entries from MainWindow._label_tumor_components, already
@@ -1330,7 +1959,7 @@ class PatientRecordPanel(HivePanel):
             return
         for comp in components[:REPORT_MAX_TUMOR_ROWS]:
             self._tumor_list.addWidget(_TumorRow(
-                comp["color_name"], comp["color_hex"],
+                f"Tumour {comp['rank']}", comp["color_hex"],
                 comp.get("confidence"), comp["volume_cm3"],
             ))
         hidden = len(components) - REPORT_MAX_TUMOR_ROWS
@@ -1340,6 +1969,92 @@ class PatientRecordPanel(HivePanel):
                 f"border: none; background: transparent; color: {TEXT_MUTED}; font-size: 10px;"
             )
             self._tumor_list.addWidget(more)
+
+
+class PatientInfoPanel(QFrame):
+    """Patient Record card: case ID, voxel size, dimensions and which of the
+    four MRI modalities were found in the folder (missing ones show greyed)."""
+
+    MODALITY_TAGS = (
+        ("T1n", r"[_-](t1n|t1)[_.]"),
+        ("T1c", r"[_-](t1c|t1ce|t1gd)[_.]"),
+        ("T2w", r"[_-](t2w|t2)[_.]"),
+        ("T2f", r"[_-](t2f|flair)[_.]"),
+    )
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("patientCard")
+        self.setStyleSheet(_card_qss("patientCard"))
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+        head, _, self.meta = _card_head("Patient Record", "BraTS-PEDs")
+        layout.addLayout(head)
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(5)
+        self._values = {}
+        for r, key in enumerate(("Patient ID", "Voxel size", "Dimensions")):
+            k = QLabel(key)
+            k.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+            v = QLabel("\u2014")
+            v.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            v.setStyleSheet(f"color: {TEXT_LIGHT}; font-size: 12px; font-weight: 500;")
+            grid.addWidget(k, r, 0)
+            grid.addWidget(v, r, 1)
+            self._values[key] = v
+        grid.setColumnStretch(1, 1)
+        layout.addLayout(grid)
+
+        chips = QHBoxLayout()
+        chips.setContentsMargins(0, 2, 0, 0)
+        chips.setSpacing(6)
+        self._chips = {}
+        for tag, _ in self.MODALITY_TAGS:
+            c = QLabel(tag)
+            chips.addWidget(c)
+            self._chips[tag] = c
+        chips.addStretch(1)
+        layout.addLayout(chips)
+        self.reset()
+
+    def _chip_style(self, label: QLabel, state: str):
+        if state == "on":
+            style = f"color: {ACCENT}; background: #EAF2FF;"
+            tip = "Found in folder"
+        elif state == "missing":
+            style = "color: #B5C0D3; background: #F3F5F9; text-decoration: line-through;"
+            tip = "Missing from folder"
+        else:
+            style = "color: #B5C0D3; background: #F3F5F9;"
+            tip = ""
+        label.setStyleSheet(
+            style + " border: none; border-radius: 10px; padding: 3px 10px; font-size: 11px; font-weight: 600;"
+        )
+        label.setToolTip(tip)
+
+    def reset(self):
+        for v in self._values.values():
+            v.setText("\u2014")
+            v.setToolTip("")
+        for c in self._chips.values():
+            self._chip_style(c, "idle")
+
+    def set_case(self, case_id: str, files, shape=None, zooms=None):
+        self._values["Patient ID"].setText(case_id if len(case_id) <= 24 else case_id[:22] + "\u2026")
+        self._values["Patient ID"].setToolTip(case_id)
+        if zooms:
+            self._values["Voxel size"].setText(" \u00d7 ".join(f"{z:.1f}" for z in zooms) + " mm")
+        if shape:
+            self._values["Dimensions"].setText(" \u00d7 ".join(str(int(v)) for v in shape))
+        names = [Path(f).name.lower() for f in files]
+        for tag, pattern in self.MODALITY_TAGS:
+            found = any(re.search(pattern, n) for n in names)
+            self._chip_style(self._chips[tag], "on" if found else "missing")
 
 
 # ---------------------------------------------------------------------------
@@ -1398,7 +2113,7 @@ class _SummaryTile(QFrame):
         super().__init__()
         self.setObjectName("summaryTile")
         self.setStyleSheet(
-            f"QFrame#summaryTile {{ background-color: #141417; border: 1px solid {BORDER_DIM}; "
+            f"QFrame#summaryTile {{ background-color: #F7FAFF; border: 1px solid {GLASS_EDGE}; "
             "border-radius: 10px; }"
             "QFrame#summaryTile QLabel { border: none; background: transparent; }"
         )
@@ -1424,7 +2139,7 @@ class _SummaryTile(QFrame):
         self.set("—", "", filled=False)
 
     def set(self, value: str, sub: str = "", filled: bool = True, small: bool = False) -> None:
-        color = ACCENT_AMBER_SOFT if filled else "#636366"
+        color = ACCENT if filled else TEXT_DIM
         size = 11 if small else 14
         self.value.setStyleSheet(f"color: {color}; font-size: {size}px; font-weight: 700;")
         self.value.setText(value)
@@ -1492,8 +2207,6 @@ class ReportSummaryPanel(QWidget):
             f"Position of the largest ({largest_color}) tumor" if count > 1 and largest_color
             else "Position of the tumor inside the brain"
         )
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 
 
 class DropVolumeZone(HivePanel):
@@ -1537,6 +2250,12 @@ class DropVolumeZone(HivePanel):
             self.setStyleSheet(DROP_ZONE_LOADED_STYLE)
         else:
             self.setStyleSheet(DROP_ZONE_STYLE)
+
+    def reset(self) -> None:
+        self._loaded = False
+        self._title.setText("Drop volume")
+        self._hint.setText("Drop a patient folder here\nor click to browse")
+        self._set_style(hover=False)
 
     def set_case(self, case_id: str) -> None:
         self._loaded = True
@@ -1607,33 +2326,38 @@ _NEON_SEGMENTS = {
     "9": "abcdfg",
 }
 
-_NEON_OFF = QColor(52, 28, 4, 80)
+_NEON_OFF = QColor(220, 228, 240)
+
+
+def _neon_shades(hex_color: str) -> tuple:
+    """(outer glow, inner glow, dark body, main, hot core) for one segment colour."""
+    base = QColor(hex_color)
+    outer = QColor(base); outer.setAlpha(50)
+    inner = QColor(base); inner.setAlpha(95)
+    body = base.darker(160)
+    core = base.lighter(165)
+    return (outer, inner, body, QColor(base), core)
+
+
+# Segments pick up the iridescent palette: top blue, middle violet, bottom magenta.
 _NEON_SEG_SHADES = {
-    "a": (QColor(180, 80, 0, 50), QColor(255, 140, 20, 90), QColor("#d97800"), QColor("#ffb020"), QColor("#ffe7b0")),
-    "b": (QColor(160, 70, 0, 45), QColor(240, 130, 10, 85), QColor("#c86800"), QColor("#ff9f1c"), QColor("#ffd88a")),
-    "c": (QColor(140, 60, 0, 40), QColor(220, 120, 8, 80), QColor("#b85c00"), QColor("#f59212"), QColor("#ffd070")),
-    "d": (QColor(190, 90, 0, 50), QColor(255, 160, 30, 95), QColor("#e88800"), QColor("#ffc14d"), QColor("#fff4d2")),
-    "e": (QColor(120, 50, 0, 40), QColor(200, 110, 0, 75), QColor("#a85000"), QColor("#e67a00"), QColor("#ffc868")),
-    "f": (QColor(150, 65, 0, 45), QColor(230, 125, 10, 80), QColor("#c06000"), QColor("#ffaa28"), QColor("#ffe0a0")),
-    "g": (QColor(200, 100, 0, 55), QColor(255, 180, 40, 100), QColor("#ff9f1c"), QColor("#ffd060"), QColor("#ffffff")),
+    "a": _neon_shades("#56c2ff"),
+    "b": _neon_shades("#6f8dff"),
+    "f": _neon_shades("#6f8dff"),
+    "g": _neon_shades("#8b6cff"),
+    "c": _neon_shades("#b066ea"),
+    "e": _neon_shades("#b066ea"),
+    "d": _neon_shades("#e85ad6"),
 }
 
 
 class NeonDigits(QWidget):
     """Seven-segment readout with layered yellowish-orange neon glow."""
 
-    def __init__(self, digits: str = "000"):
+    def __init__(self, digits: str = "\u2014"):
         super().__init__()
         self._digits = digits
-<<<<<<< Updated upstream
-        self.setFixedHeight(102)
-=======
-<<<<<<< HEAD
-        self.setFixedHeight(102)
-=======
         self.setFixedHeight(SURVIVAL_DIGITS_HEIGHT)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_NoSystemBackground, True)
@@ -1642,28 +2366,47 @@ class NeonDigits(QWidget):
 
     def set_value(self, days: Optional[int]) -> None:
         if days is None:
-            self._digits = "000"
+            self._digits = "\u2014"   # em dash: no prediction yet
         else:
             n = max(0, int(days))
             self._digits = f"{n:03d}" if n < 1000 else str(n)
         self.update()
 
     def paintEvent(self, event):
+        """Thin, widely spaced digits filled with a sky -> violet -> pink
+        gradient and a soft blue glow — same look as the design preview."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.TextAntialiasing)
+        text = self._digits
+        area = QRectF(self.rect()).adjusted(8, 4, -8, -4)
 
-        count = max(3, len(self._digits))
-        text = self._digits.rjust(count, "0")
-        pad = 8
-        gap = 8
-        available = max(1, self.width() - pad * 2 - gap * (count - 1))
-        digit_w = available / count
-        digit_h = self.height() - 12
-        y = 6
+        font = QFont("Segoe UI")
+        font.setWeight(QFont.Light)
+        size = max(10, int(area.height() * 0.95))
+        while True:
+            font.setPixelSize(size)
+            font.setLetterSpacing(QFont.AbsoluteSpacing, size * 0.15)
+            path = QPainterPath()
+            path.addText(0, 0, font, text)
+            box = path.boundingRect()
+            if (box.width() <= area.width() and box.height() <= area.height()) or size <= 10:
+                break
+            size -= 2
+        path.translate(area.center().x() - box.center().x(), area.center().y() - box.center().y())
+        box = path.boundingRect()
 
-        for i, ch in enumerate(text):
-            x = pad + i * (digit_w + gap)
-            self._draw_digit(painter, x, y, digit_w, digit_h, ch)
+        # Soft glow: a few wide, faint strokes under the fill.
+        for width, alpha in ((12, 16), (7, 28), (3.5, 44)):
+            pen = QPen(QColor(31, 111, 235, alpha // 3), width)
+            pen.setJoinStyle(Qt.RoundJoin)
+            pen.setCapStyle(Qt.RoundCap)
+            painter.strokePath(path, pen)
+
+        fill = QLinearGradient(box.left(), 0, box.right(), 0)
+        fill.setColorAt(0.0, QColor("#1F6FEB"))
+        fill.setColorAt(1.0, QColor("#5AA2FF"))
+        painter.fillPath(path, fill)
         painter.end()
 
     def _draw_digit(self, painter: QPainter, x: float, y: float, w: float, h: float, ch: str):
@@ -1737,52 +2480,25 @@ class SurvivalDaysPanel(HivePanel):
     def __init__(self):
         super().__init__()
         self.setStyleSheet(
-            "QFrame { border: none; border-radius: 16px; background-color: #050608; }"
+            f"QFrame {{ border: 1px solid {GLASS_EDGE}; border-radius: 18px; background-color: {GLASS_BG}; }}"
+            "QLabel { border: none; }"
         )
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, SURVIVAL_EDGE_GAP, 12, SURVIVAL_EDGE_GAP)
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-        layout.setSpacing(8)
-
-        title = QLabel("Survival Days")
-        title.setAlignment(Qt.AlignCenter)
-        title.setFixedHeight(18)
-        title.setStyleSheet(
-            f"border: none; background: transparent; color: {ACCENT_AMBER_SOFT}; "
-            f"font-size: 13px; font-weight: 600;"
-<<<<<<< Updated upstream
-=======
-=======
+        layout.setContentsMargins(14, SURVIVAL_EDGE_GAP + 4, 14, SURVIVAL_EDGE_GAP)
         layout.setSpacing(6)
 
-        title = QLabel("Predicted Survival Days")
-        title.setToolTip("Model estimate; recorded survival, when available, is shown in the report")
-        title.setAlignment(Qt.AlignCenter)
+        title = QWidget()
         title.setFixedHeight(16)
-        title.setStyleSheet(
-            f"border: none; background: transparent; color: {ACCENT_AMBER_SOFT}; "
-            f"font-size: 11px; font-weight: 600;"
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
-        )
+        title.setStyleSheet("background: transparent;")
+        head, _, _ = _card_head("Predicted Survival", "days")
+        title.setLayout(head)
         layout.addWidget(title)
 
         self.digits = NeonDigits("000")
         layout.addWidget(self.digits)
-<<<<<<< Updated upstream
-        self.setFixedHeight(SURVIVAL_EDGE_GAP + 18 + 8 + 102 + SURVIVAL_EDGE_GAP)
-=======
-<<<<<<< HEAD
-        self.setFixedHeight(SURVIVAL_EDGE_GAP + 18 + 8 + 102 + SURVIVAL_EDGE_GAP)
-=======
-        self.setFixedHeight(SURVIVAL_EDGE_GAP + 16 + 6 + SURVIVAL_DIGITS_HEIGHT + SURVIVAL_EDGE_GAP)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
+        self.setFixedHeight(SURVIVAL_EDGE_GAP + 4 + 16 + 6 + SURVIVAL_DIGITS_HEIGHT + SURVIVAL_EDGE_GAP)
 
     def set_days(self, days: Optional[float]) -> None:
         if days is None:
@@ -1969,10 +2685,6 @@ class ArcSpinner(QWidget):
         painter.end()
 
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
 # MedSAM2 card on the right of each 2D view.
 SAM_SIDEBAR_WIDTH = 104
 _SAM_PROMPT_HINT = "L/R CLICK: FG/BG\nDRAG: BOX"
@@ -2012,97 +2724,38 @@ _HIVE_2D_LAYOUTS = {
 _HIVE_2D_CACHE: dict = {}
 
 
+SLICE_BG_BASE = SCAN_BG
+# Per-plane glow positions so the three 2D rows don't look identical.
+_SLICE_GLOWS = {
+    "sagittal": ((0.22, 0.28, "#4fa3ff"), (0.82, 0.76, "#8b6cff")),
+    "axial": ((0.80, 0.24, "#8b6cff"), (0.18, 0.78, "#2fd4c4")),
+    "coronal": ((0.20, 0.74, "#e85ad6"), (0.80, 0.26, "#4fa3ff")),
+}
+
+
 def _hive_backdrop_2d(width: int, height: int, variant: str) -> np.ndarray:
-    """(height, width, 3) float RGB of the hive backdrop at an exact pixel size."""
+    """(height, width, 3) float RGB: still version of the blue ambient backdrop
+    for the 2D slices (animating it would force constant matplotlib redraws)."""
     key = (width, height, variant)
     cached = _HIVE_2D_CACHE.get(key)
     if cached is not None:
         return cached
     if len(_HIVE_2D_CACHE) > 12:
         _HIVE_2D_CACHE.clear()
-    layout = _HIVE_2D_LAYOUTS.get(variant, _HIVE_2D_LAYOUTS["sagittal"])
     w, h = max(1, width), max(1, height)
     image = QImage(w, h, QImage.Format_RGBA8888)
-    image.fill(QColor("#0a0a0c"))
+    image.fill(QColor(SLICE_BG_BASE))
     painter = QPainter(image)
     painter.setRenderHint(QPainter.Antialiasing)
 
-    wash = QLinearGradient(0, 0, 0, h)
-    wash.setColorAt(0.0, QColor("#0c0a08"))
-    wash.setColorAt(0.55, QColor("#15110d"))
-    wash.setColorAt(1.0, QColor("#0a0a0c"))
-    painter.fillRect(0, 0, w, h, wash)
-
-    # Warm elliptical centre glow (matches the 3D page's radial-gradient).
-    painter.save()
-    painter.translate(w * 0.5, h * 0.52)
-    painter.scale(max(1.0, w * 0.70), max(1.0, h * 0.65))
-    glow = QRadialGradient(QPointF(0, 0), 1.0)
-    glow.setColorAt(0.0, QColor(255, 159, 28, 23))
-    glow.setColorAt(0.45, QColor(255, 159, 28, 8))
-    glow.setColorAt(0.70, QColor(255, 159, 28, 0))
+    # Minimal theme: flat dark viewport with a barely-there lift in the centre.
+    side = float(max(w, h))
     painter.setPen(Qt.NoPen)
-    painter.setBrush(glow)
-    painter.drawRect(QRectF(-1.5, -1.5, 3.0, 3.0))
-    painter.restore()
-
-    # Honeycomb lattice, faded out toward the centre like the SVG mask.
-    r = float(HIVE_3D_GRID_RADIUS)
-    dx = math.sqrt(3) * r
-    dy = 1.5 * r
-    clear = max(0.0, min(0.9, HIVE_3D_CLEAR_ZONE))
-    painter.setBrush(Qt.NoBrush)
-    row = 0
-    y = 0.0
-    while y < h + r:
-        x = (dx / 2) if row % 2 else 0.0
-        while x < w + r:
-            t = math.hypot((x - w / 2) / (0.72 * w), (y - h / 2) / (0.72 * h))
-            fade = max(0.0, min(1.0, (t - clear) / (1.0 - clear)))
-            if fade > 0.01:
-                color = QColor(ACCENT_AMBER)
-                color.setAlphaF(HIVE_3D_GRID_ALPHA * fade)
-                painter.setPen(QPen(color, 1.0))
-                painter.drawPolygon(_hex_points(x, y, r))
-            x += dx
-        y += dy
-        row += 1
-
-    def pct(pt):
-        return QPointF(pt[0] / 100.0 * w, pt[1] / 100.0 * h)
-
-    for a, b in layout["traces"]:
-        dim = QColor(ACCENT_AMBER)
-        dim.setAlphaF(0.12)
-        painter.setPen(QPen(dim, 3.0))
-        painter.drawLine(pct(a), pct(b))
-        core = QColor(ACCENT_AMBER)
-        core.setAlphaF(0.45)
-        painter.setPen(QPen(core, 1.0))
-        painter.drawLine(pct(a), pct(b))
-
-    pad_fill = QColor(ACCENT_AMBER)
-    pad_fill.setAlphaF(0.22)
-    pad_edge = QColor(ACCENT_AMBER)
-    pad_edge.setAlphaF(0.8)
-    for node in layout["nodes"]:
-        c = pct(node)
-        painter.setPen(QPen(pad_edge, 1.0))
-        painter.setBrush(pad_fill)
-        painter.drawPolygon(_hex_points(c.x(), c.y(), 4.5))
-
-    painter.setBrush(Qt.NoBrush)
-    for hx, hy, radius, alpha, sides in layout["hexes"]:
-        c = pct((hx, hy))
-        color = QColor(ACCENT_AMBER)
-        color.setAlphaF(alpha)
-        painter.setPen(QPen(color, 1.15))
-        pts = _hex_points(c.x(), c.y(), radius)
-        if sides >= 6:
-            painter.drawPolygon(pts)
-        else:
-            for i in range(sides):
-                painter.drawLine(pts[i], pts[(i + 1) % 6])
+    centre = QRadialGradient(QPointF(w / 2, h / 2), side * 0.5)
+    centre.setColorAt(0.0, QColor(40, 70, 140, 34))
+    centre.setColorAt(1.0, QColor(40, 70, 140, 0))
+    painter.setBrush(centre)
+    painter.drawEllipse(QPointF(w / 2, h / 2), side * 0.5, side * 0.5)
     painter.end()
 
     buf = bytes(image.constBits())
@@ -2110,7 +2763,6 @@ def _hive_backdrop_2d(width: int, height: int, variant: str) -> np.ndarray:
     rgb = rgba[:, : w * 4].reshape(h, w, 4)[:, :, :3].astype(np.float32) / 255.0
     _HIVE_2D_CACHE[key] = rgb
     return rgb
-
 
 class SamCard(HivePanel):
     """Separate bordered card holding one 2D view's MedSAM2 controls."""
@@ -2126,8 +2778,8 @@ class SamCard(HivePanel):
         # Same frame as the 2D views, scoped by object name so the border
         # doesn't cascade onto the labels inside.
         self.setStyleSheet(
-            "QFrame#samCard { border: 1.5px solid #1a140c; border-radius: 16px; "
-            "background-color: #08080c; }"
+            f"QFrame#samCard {{ border: 1px solid {GLASS_EDGE}; border-radius: 18px; "
+            f"background-color: {GLASS_BG}; }}"
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(9, 10, 9, 12)
@@ -2135,8 +2787,6 @@ class SamCard(HivePanel):
         layout.addWidget(controls)
         self._sync_hive_overlay()
 
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 class SlicePanel(HivePanel):
     """
     A bordered panel that shows one anatomical plane of a 3D volume as a
@@ -2150,8 +2800,6 @@ class SlicePanel(HivePanel):
     refinement_requested = Signal(object)
     accept_requested = Signal()
     discard_requested = Signal()
-    mask_edited = Signal(object)
-    mask_undo_requested = Signal()
 
     def __init__(self, title: str, axis: int, min_height: int = 200):
         super().__init__()
@@ -2162,10 +2810,6 @@ class SlicePanel(HivePanel):
         self.labels = None      # optional int array, same shape: 0=background, 1..N=component id
         self.color_map = None   # optional {component_id: hex_color}, matching self.labels
         self._bbox = None       # inclusive (lo, hi) of brain tissue, for zoomed square crop
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
         self._sam_enabled = False
         self._sam_busy = False
         self._sam_preview_available = False
@@ -2175,13 +2819,6 @@ class SlicePanel(HivePanel):
         self._drag_start = None
         self._sam_prompt_slice = None
         self._resize_redraw_pending = False
-        self._mask_edit_enabled = False
-        self._mask_edit_mode = None
-        self._mask_stroke = []
-        self._mask_emitted_count = 0
-        self._mask_dragging = False
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 
         self.setFrameShape(QFrame.Box)
         # Pure black background (not the charcoal BG_PANEL used elsewhere)
@@ -2190,53 +2827,42 @@ class SlicePanel(HivePanel):
         # image instead of showing as a separate charcoal-colored frame
         # around it.
         self.setStyleSheet(
-            "QFrame { border: 1.5px solid #1a140c; border-radius: 16px; "
-            "background-color: #08080c; }"
+            f"QFrame {{ border: 1px solid {GLASS_EDGE}; border-radius: 18px; "
+            f"background-color: {GLASS_BG}; }}"
         )
         self.setMinimumHeight(min_height)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setContentsMargins(14, 12, 14, 10)
         layout.setSpacing(8)
 
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(4)
-        header.addStretch(1)
-        self._base_title = title.upper()
-        self.title_label = QLabel(self._base_title)
-        self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setStyleSheet(
-            f"border: none; color: {ACCENT_AMBER}; font-size: 11px; "
-            f"font-weight: 700; letter-spacing: 1.4px;"
-        )
-        header.addWidget(self.title_label)
-        header.addStretch(1)
+        header, self.title_label, self.index_label = _card_head(title, "")
+        self._base_title = title
         self.maximize_btn = _fullscreen_button("Maximize")
         header.addWidget(self.maximize_btn)
         layout.addLayout(header)
 
         self.figure = Figure(figsize=(3, 3))
-        self.figure.patch.set_facecolor("#08080c")
+        self.figure.patch.set_facecolor(SLICE_BG_BASE)
         self._bg_artist = None
         self._bg_key = None
         self.figure.subplots_adjust(left=0, right=1, top=1, bottom=0)
         self.canvas = FigureCanvasQTAgg(self.figure)
-        self.canvas.setStyleSheet("background-color: #08080c;")
+        self.canvas.setStyleSheet(f"background-color: {SLICE_BG_BASE};")
         self.ax = self.figure.add_subplot(111)
         self.ax.set_facecolor((0, 0, 0, 0))
         self.ax.axis("off")
+        self.canvas.mpl_connect("resize_event", self._on_canvas_resize)
         self.canvas.mpl_connect("button_press_event", self._on_canvas_press)
         self.canvas.mpl_connect("button_release_event", self._on_canvas_release)
-        self.canvas.mpl_connect("motion_notify_event", self._on_canvas_motion)
 
         # Canvas + loading overlay share the same space via a stacked
         # layout, so the spinner appears directly on top of the slice
         # image instead of needing a separate panel or popup.
         self.canvas_stack = QStackedLayout()
         self.canvas_stack.setStackingMode(QStackedLayout.StackAll)
-        canvas_container = QWidget()
+        canvas_container = _RoundedHost(12)
         canvas_container.setLayout(self.canvas_stack)
         self.canvas_stack.addWidget(self.canvas)
 
@@ -2244,7 +2870,7 @@ class SlicePanel(HivePanel):
         # Lighter than before — the pixelated image itself now carries most
         # of the visual weight, so a heavy flat black backdrop would just
         # compete with it instead of framing it.
-        self.loading_overlay.setStyleSheet("background-color: rgba(0, 0, 0, 90);")
+        self.loading_overlay.setStyleSheet("background-color: rgba(5, 8, 30, 120);")
         overlay_stack = QStackedLayout(self.loading_overlay)
         overlay_stack.setStackingMode(QStackedLayout.StackAll)
 
@@ -2270,7 +2896,7 @@ class SlicePanel(HivePanel):
 
         spinner_row = QHBoxLayout()
         spinner_row.addStretch(1)
-        self.loading_animation = ArcSpinner(diameter=26, color=ACCENT_TEAL_SOFT)
+        self.loading_animation = ArcSpinner(diameter=26, color=SCAN_TEXT)
         spinner_row.addWidget(self.loading_animation)
         corner_layout.addLayout(spinner_row)
         corner_layout.addStretch(1)
@@ -2278,7 +2904,7 @@ class SlicePanel(HivePanel):
         self.loading_caption = QLabel("SCANNING")
         self.loading_caption.setAlignment(Qt.AlignCenter)
         self.loading_caption.setStyleSheet(
-            f"color: {ACCENT_TEAL_SOFT}; font-size: 10px; font-weight: 600; "
+            f"color: {SCAN_TEXT}; font-size: 10px; font-weight: 600; "
             f"letter-spacing: 2px; background: transparent; border: none;"
         )
         corner_layout.addWidget(self.loading_caption)
@@ -2308,46 +2934,7 @@ class SlicePanel(HivePanel):
         self.slider.setEnabled(False)
         self.slider.valueChanged.connect(self._on_slider_changed)
         slider_layout.addWidget(self.slider)
-<<<<<<< Updated upstream
-        layout.addWidget(slider_wrap)
-=======
-<<<<<<< HEAD
-        layout.addWidget(slider_wrap)
-=======
         image_col.addWidget(slider_wrap)
-
-        self.mask_tools = QWidget()
-        self.mask_tools.setStyleSheet("background: transparent; border: none;")
-        mask_tools_layout = QHBoxLayout(self.mask_tools)
-        mask_tools_layout.setContentsMargins(2, 0, 2, 0)
-        mask_tools_layout.setSpacing(5)
-        mask_label = QLabel("DRAG IMAGE TO ERASE")
-        mask_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; border: none; font-size: 8px; font-weight: 700;"
-        )
-        self.eraser_size = QSlider(Qt.Horizontal)
-        self.eraser_size.setRange(1, 20)
-        self.eraser_size.setValue(5)
-        self.eraser_size.setFixedWidth(65)
-        self.eraser_size.setToolTip("Eraser radius in voxels")
-        self.eraser_undo_btn = QPushButton("UNDO")
-        self.eraser_undo_btn.setEnabled(False)
-        self.eraser_undo_btn.setCursor(Qt.PointingHandCursor)
-        self.eraser_undo_btn.setStyleSheet(
-            f"QPushButton {{ color: {TEXT_MUTED}; background: #121216; "
-            f"border: 1px solid {BORDER_DIM}; border-radius: 6px; "
-            "padding: 3px 7px; font-size: 8px; font-weight: 700; }"
-            f"QPushButton:hover {{ color: {TEXT_LIGHT}; border-color: {ACCENT_AMBER}; }}"
-            "QPushButton:disabled { color: #4c494d; border-color: #29272a; }"
-        )
-        mask_tools_layout.addWidget(mask_label)
-        mask_tools_layout.addStretch(1)
-        mask_tools_layout.addWidget(QLabel("SIZE"))
-        mask_tools_layout.addWidget(self.eraser_size)
-        mask_tools_layout.addWidget(self.eraser_undo_btn)
-        image_col.addWidget(self.mask_tools)
-        self.eraser_undo_btn.clicked.connect(self.mask_undo_requested.emit)
-        self.mask_tools.hide()
         body_row.addLayout(image_col, stretch=1)
 
         # MedSAM2 sidebar. Progressive disclosure as before: title, status and
@@ -2366,14 +2953,14 @@ class SlicePanel(HivePanel):
         sam_title = QLabel("MEDSAM2")
         sam_title.setAlignment(Qt.AlignCenter)
         sam_title.setStyleSheet(
-            f"color: {ACCENT_AMBER}; font-size: 11px; font-weight: 700; letter-spacing: 1.4px;"
+            f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 700; letter-spacing: 1.6px;"
         )
         sam_layout.addWidget(sam_title)
 
         self.sam_status = QLabel("LOCKED")
         self.sam_status.setAlignment(Qt.AlignCenter)
         self.sam_status.setStyleSheet(
-            f"color: {TEXT_MUTED}; background: #202024; border: none; border-radius: 7px; "
+            f"color: {TEXT_MUTED}; background: #EEF3FB; border: none; border-radius: 7px; "
             "padding: 2px 4px; font-size: 8px; font-weight: 700;"
         )
         sam_layout.addWidget(self.sam_status)
@@ -2381,15 +2968,15 @@ class SlicePanel(HivePanel):
         secondary_style = (
             f"QPushButton {{ color: {TEXT_MUTED}; background: transparent; border: 1px solid {BORDER_DIM}; "
             "border-radius: 6px; padding: 4px 4px; font-size: 9px; font-weight: 600; }}"
-            f"QPushButton:hover {{ color: {TEXT_LIGHT}; border-color: {ACCENT_AMBER_DEEP}; "
-            "background: #2a2114; }}"
-            "QPushButton:disabled { color: #565159; border-color: #29272a; background: transparent; }"
+            f"QPushButton:hover {{ color: {TEXT_LIGHT}; border-color: {ACCENT_DEEP}; "
+            "background: #EAF2FF; }}"
+            "QPushButton:disabled { color: #B5C0D3; border-color: #EEF2F8; background: transparent; }"
         )
         primary_style = (
-            f"QPushButton {{ color: #17120a; background: {ACCENT_AMBER}; border: none; "
+            f"QPushButton {{ color: #ffffff; background: {GRADIENT_QSS}; border: none; "
             "border-radius: 6px; padding: 5px 4px; font-size: 9px; font-weight: 800; }}"
-            f"QPushButton:hover {{ background: {ACCENT_AMBER_SOFT}; }}"
-            "QPushButton:disabled { color: #77716a; background: #343036; }"
+            f"QPushButton:hover {{ background: {GRADIENT_QSS_HOVER}; }}"
+            "QPushButton:disabled { color: #A3AFC2; background: #E3E9F3; }"
         )
         self.sam_refine_btn = QPushButton("REFINE")
         self.sam_refine_btn.setCheckable(True)
@@ -2397,8 +2984,8 @@ class SlicePanel(HivePanel):
         self.sam_refine_btn.setCursor(Qt.PointingHandCursor)
         self.sam_refine_btn.setStyleSheet(
             secondary_style
-            + f"QPushButton:checked {{ color: {ACCENT_AMBER_SOFT}; border-color: {ACCENT_AMBER}; "
-            "background: #2a2114; }"
+            + f"QPushButton:checked {{ color: {ACCENT_SOFT}; border-color: {ACCENT}; "
+            "background: #EAF2FF; }"
         )
         sam_layout.addWidget(self.sam_refine_btn)
 
@@ -2467,8 +3054,6 @@ class SlicePanel(HivePanel):
         # panel by MainWindow (see self.sam_card).
         self.sam_card = SamCard(self.sam_controls)
         layout.addLayout(body_row, stretch=1)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         self._show_hive_empty()
         self._sync_hive_overlay()
 
@@ -2501,15 +3086,8 @@ class SlicePanel(HivePanel):
         self.labels = None
         self.color_map = None
         self._bbox = _content_bbox(volume)
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
         self.clear_sam_prompts()
         self.enable_sam(False)
-        self.enable_mask_editing(False)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         n_slices = volume.shape[self.axis]
         self.slider.setEnabled(True)
         self.slider.setMinimum(0)
@@ -2533,7 +3111,6 @@ class SlicePanel(HivePanel):
         self.probs = None
         self.labels = None
         self.color_map = None
-        self.enable_mask_editing(True)
         self._draw_slice(self.slider.value())
 
     def clear_detection(self):
@@ -2542,7 +3119,6 @@ class SlicePanel(HivePanel):
         self.probs = None
         self.labels = None
         self.color_map = None
-        self.enable_mask_editing(False)
         if self.volume is not None:
             self._draw_slice(self.slider.value())
 
@@ -2554,7 +3130,6 @@ class SlicePanel(HivePanel):
         self.probs = None
         self.labels = labels
         self.color_map = color_map
-        self.enable_mask_editing(True)
         self._draw_slice(self.slider.value())
 
     @property
@@ -2593,12 +3168,12 @@ class SlicePanel(HivePanel):
         elif self._sam_preview_available:
             status, color = "REVIEW", ACCENT_TEAL_SOFT
         elif self._sam_enabled:
-            status, color = "READY", ACCENT_AMBER_SOFT
+            status, color = "READY", ACCENT_SOFT
         else:
             status, color = "LOAD MRI", TEXT_MUTED
         self.sam_status.setText(status)
         self.sam_status.setStyleSheet(
-            f"color: {color}; background: #202024; border: none; border-radius: 7px; "
+            f"color: {color}; background: #EEF3FB; border: none; border-radius: 7px; "
             "padding: 2px 6px; font-size: 8px; font-weight: 700;"
         )
 
@@ -2609,14 +3184,8 @@ class SlicePanel(HivePanel):
         )
 
     def _set_sam_editing(self, editing: bool):
-        if editing:
-            self._set_mask_edit_mode(None)
         self._sam_editing = editing and self._sam_enabled
-        if not self._sam_editing and self._mask_edit_enabled:
-            self._set_mask_edit_mode("eraser")
-        self.canvas.setCursor(
-            Qt.CrossCursor if self._sam_editing or self._mask_edit_mode else Qt.ArrowCursor
-        )
+        self.canvas.setCursor(Qt.CrossCursor if self._sam_editing else Qt.ArrowCursor)
         self.sam_refine_btn.setText("EDITING" if self._sam_editing else "REFINE")
         self._sync_sam_controls()
 
@@ -2644,53 +3213,7 @@ class SlicePanel(HivePanel):
         rows, cols = current.shape
         return rotated_to_prompt_xy(event.xdata, event.ydata, rows, cols)
 
-    def enable_mask_editing(self, enabled: bool):
-        self._mask_edit_enabled = bool(enabled)
-        self.eraser_size.setEnabled(enabled)
-        self.mask_tools.setVisible(enabled)
-        if not enabled:
-            self.eraser_undo_btn.setEnabled(False)
-        self._set_mask_edit_mode("eraser" if enabled and not self._sam_editing else None)
-
-    def set_mask_undo_available(self, available: bool):
-        self.eraser_undo_btn.setEnabled(available)
-
-    def _set_mask_edit_mode(self, mode):
-        self._mask_edit_mode = mode
-        if mode is not None and self.sam_refine_btn.isChecked():
-            self.sam_refine_btn.setChecked(False)
-        self.canvas.setCursor(Qt.CrossCursor if mode or self._sam_editing else Qt.ArrowCursor)
-
-    def _append_mask_stroke_point(self, event):
-        xy = self._event_to_prompt_xy(event)
-        if xy is None:
-            return
-        point = (int(round(xy[0])), int(round(xy[1])))
-        if not self._mask_stroke or point != self._mask_stroke[-1]:
-            self._mask_stroke.append(point)
-
-    def _emit_mask_stroke(self, final: bool = False, start_of_stroke: bool = False):
-        start = max(0, self._mask_emitted_count - 1)
-        new_points = self._mask_stroke[start:]
-        if new_points or final:
-            self.mask_edited.emit({
-                "plane": self.plane,
-                "slice_index": self.slider.value(),
-                "points": list(new_points),
-                "radius": self.eraser_size.value(),
-                "final": final,
-                "start": start_of_stroke,
-            })
-            self._mask_emitted_count = len(self._mask_stroke)
-
     def _on_canvas_press(self, event):
-        if self._mask_edit_mode is not None and self.volume is not None and event.button == 1:
-            self._mask_stroke = []
-            self._mask_emitted_count = 0
-            self._mask_dragging = True
-            self._append_mask_stroke_point(event)
-            self._emit_mask_stroke(start_of_stroke=True)
-            return
         if not self._sam_editing or self.volume is None:
             return
         xy = self._event_to_prompt_xy(event)
@@ -2708,13 +3231,6 @@ class SlicePanel(HivePanel):
             self._draw_slice(self.slider.value())
 
     def _on_canvas_release(self, event):
-        if self._mask_dragging and event.button == 1:
-            self._append_mask_stroke_point(event)
-            self._mask_dragging = False
-            self._emit_mask_stroke(final=True)
-            self._mask_stroke = []
-            self._mask_emitted_count = 0
-            return
         if not self._sam_editing or event.button != 1 or self._drag_start is None:
             return
         end = self._event_to_prompt_xy(event)
@@ -2734,11 +3250,6 @@ class SlicePanel(HivePanel):
             self._sam_points.append((end[0], end[1], 1))
         self._sync_sam_controls()
         self._draw_slice(self.slider.value())
-
-    def _on_canvas_motion(self, event):
-        if self._mask_dragging:
-            self._append_mask_stroke_point(event)
-            self._emit_mask_stroke()
 
     def _request_sam_refinement(self):
         if self._sam_box is None and not self._sam_points:
@@ -2776,7 +3287,6 @@ class SlicePanel(HivePanel):
         self.labels = labels
         self.color_map = color_map
         self.mask = None  # heatmap supersedes the binary overlay for display
-        self.enable_mask_editing(True)
         self._draw_slice(self.slider.value())
 
     def _on_slider_changed(self, index: int):
@@ -2877,18 +3387,6 @@ class SlicePanel(HivePanel):
                 rgb[hit, 1] = 0.15
                 rgb[hit, 2] = 0.15
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-        shown = np.rot90(rgb)
-        self.ax.clear()
-        self.ax.imshow(shown, aspect="equal", interpolation="bilinear")
-        self.ax.set_aspect("equal", adjustable="datalim")
-        self._apply_brain_zoom(shown.shape[0], shown.shape[1], rgb.shape[0])
-<<<<<<< Updated upstream
-=======
-=======
         # Fade the near-black surround to transparent so the hive backdrop
         # shows around the head; tissue and any tumor overlay stay opaque.
         alpha = np.clip(
@@ -2905,24 +3403,16 @@ class SlicePanel(HivePanel):
         self._draw_sam_prompts(rgb.shape[1])
         self.ax.set_aspect("equal", adjustable="datalim")
         self._apply_brain_zoom(shown.shape[0], shown.shape[1], rgb.shape[1])
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         self.ax.axis("off")
         self.canvas.draw_idle()
 
-        self.title_label.setText(f"{self._base_title}  (SLICE {index})")
+        self.index_label.setText(f"{index} / {self.slider.maximum()}")
         self._sync_hive_overlay()
 
-<<<<<<< Updated upstream
-    def _apply_brain_zoom(self, shown_h: int, shown_w: int, pre_rot_rows: int):
-=======
-<<<<<<< HEAD
-    def _apply_brain_zoom(self, shown_h: int, shown_w: int, pre_rot_rows: int):
-=======
     def _draw_sam_prompts(self, pre_rot_cols: int):
         for x, y, label in self._sam_points:
             shown_x, shown_y = prompt_to_rotated_xy(x, y, pre_rot_cols)
-            color = "#30d158" if label == 1 else "#ff3b30"
+            color = ACCENT_TEAL if label == 1 else "#ff5c8a"
             marker = "+" if label == 1 else "x"
             self.ax.plot(shown_x, shown_y, marker=marker, color=color, markersize=9, markeredgewidth=2)
         if self._sam_box is not None:
@@ -2931,12 +3421,10 @@ class SlicePanel(HivePanel):
             shown_y0, shown_y1 = pre_rot_cols - 1 - x1, pre_rot_cols - 1 - x0
             self.ax.add_patch(Rectangle(
                 (shown_x0, shown_y0), shown_x1 - shown_x0, shown_y1 - shown_y0,
-                fill=False, edgecolor=ACCENT_AMBER_SOFT, linewidth=1.8,
+                fill=False, edgecolor=ACCENT_SOFT, linewidth=1.8,
             ))
 
     def _apply_brain_zoom(self, shown_h: int, shown_w: int, pre_rot_cols: int):
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         """
         Crop the view to the brain bounding box after rot90 so the head
         fills more of the panel without changing voxel aspect ratio.
@@ -2953,37 +3441,15 @@ class SlicePanel(HivePanel):
         else:
             r0, r1 = lo[0], hi[0]
             c0, c1 = lo[1], hi[1]
-<<<<<<< Updated upstream
-        # rot90: (r, c) -> new row = c, new col = (pre_rot_rows - 1 - r)
-        xs = [pre_rot_rows - 1 - r0, pre_rot_rows - 1 - r1]
-        ys = [c0, c1]
-=======
-<<<<<<< HEAD
-        # rot90: (r, c) -> new row = c, new col = (pre_rot_rows - 1 - r)
-        xs = [pre_rot_rows - 1 - r0, pre_rot_rows - 1 - r1]
-        ys = [c0, c1]
-=======
         # np.rot90: source (row, col) -> displayed
         # (x=row, y=pre_rot_cols-1-col).
         xs = [r0, r1]
         ys = [pre_rot_cols - 1 - c0, pre_rot_cols - 1 - c1]
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         x0, x1 = min(xs) - 0.5, max(xs) + 0.5
         y0, y1 = min(ys) - 0.5, max(ys) + 0.5
         self.ax.set_xlim(max(-0.5, x0), min(shown_w - 0.5, x1))
         self.ax.set_ylim(min(shown_h - 0.5, y1), max(-0.5, y0))
 
-<<<<<<< Updated upstream
-    def _show_hive_empty(self):
-        self.ax.clear()
-        self.ax.set_facecolor("#000000")
-=======
-<<<<<<< HEAD
-    def _show_hive_empty(self):
-        self.ax.clear()
-        self.ax.set_facecolor("#000000")
-=======
     def _ensure_backdrop(self):
         """(Re)place the hive backdrop behind the axes at the canvas's exact
         pixel size; only regenerated when the size changes."""
@@ -3003,23 +3469,44 @@ class SlicePanel(HivePanel):
         self._bg_artist = self.figure.figimage(backdrop, xo=0, yo=0, origin="upper", zorder=-10)
         self._bg_key = key
 
+    def _on_canvas_resize(self, _event=None):
+        """The canvas changed size: re-fit the backdrop so it covers it fully."""
+        self._ensure_backdrop()
+        self.canvas.draw_idle()
+
+    def clear_volume(self):
+        """Back to the empty state: no MRI, no overlays, no prompts."""
+        self.volume = None
+        self.mask = None
+        self.probs = None
+        self.labels = None
+        self.color_map = None
+        self._bbox = None
+        self.clear_sam_prompts()
+        self.enable_sam(False)
+        self.set_sam_preview_available(False)
+        self.slider.blockSignals(True)
+        self.slider.setValue(0)
+        self.slider.setEnabled(False)
+        self.slider.blockSignals(False)
+        self.index_label.setText("")
+        self._show_hive_empty()
+
     def _show_hive_empty(self):
         self._ensure_backdrop()
         self.ax.clear()
         self.ax.set_facecolor((0, 0, 0, 0))
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         self.ax.axis("off")
+        self.ax.text(
+            0.5, 0.5, "LOAD AN MRI FOLDER TO BEGIN", transform=self.ax.transAxes,
+            ha="center", va="center", color=SCAN_TEXT, fontsize=8, fontweight="bold", alpha=0.75,
+        )
         self.canvas.draw_idle()
 
     def set_maximized(self, is_max: bool):
         self.maximize_btn.setText("🗗" if is_max else "⛶")
         self.maximize_btn.setToolTip("Restore" if is_max else "Maximize")
         self._sync_hive_overlay()
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
 
     def refresh_after_layout_change(self):
         """Redraw the slice after Qt has applied the panel's new geometry.
@@ -3102,75 +3589,43 @@ def _fmt_pts(pts) -> str:
     return " ".join(f"{x:.2f},{y:.2f}" for x, y in pts)
 
 
+# Dotted background of the 3D Brain view. Tweak these to taste.
+DOT_GRID_SPACING = 18     # px between dots (smaller = denser)
+DOT_GRID_SIZE = 1.2       # dot radius in px
+DOT_GRID_ALPHA = 0.22     # dot opacity (0 = invisible, 1 = solid blue)
+
+
 def _hive_backdrop_svg(variant: str = "brain") -> str:
-    """Full-size SVG: faint honeycomb at the edges, circuit traces, sparse hexes."""
-    layout = _HIVE_3D_LAYOUTS.get(variant, _HIVE_3D_LAYOUTS["brain"])
-    amber = ACCENT_AMBER
-    r = HIVE_3D_GRID_RADIUS
-    tile_w = math.sqrt(3) * r
-    tile_h = 3 * r
-    centres = ((0, 0), (tile_w, 0), (tile_w / 2, 1.5 * r), (0, tile_h), (tile_w, tile_h))
-    tile = "".join(f'<polygon points="{_fmt_pts(_svg_hex_pts(x, y, r))}"/>' for x, y in centres)
-
-    clear = max(0.0, min(0.9, HIVE_3D_CLEAR_ZONE)) * 100
-    parts = [
-        '<svg class="hive-svg" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">',
-        "<defs>",
-        f'<pattern id="hiveTile" patternUnits="userSpaceOnUse" width="{tile_w:.3f}" height="{tile_h:.3f}">',
-        f'<g fill="none" stroke="{amber}" stroke-width="1" stroke-opacity="{HIVE_3D_GRID_ALPHA}">{tile}</g>',
-        "</pattern>",
-        '<radialGradient id="hiveFade" cx="50%" cy="50%" r="72%">',
-        f'<stop offset="0%" stop-color="#000"/><stop offset="{clear:.0f}%" stop-color="#000"/>',
-        '<stop offset="100%" stop-color="#fff"/>',
-        "</radialGradient>",
-        '<mask id="hiveMask"><rect width="100%" height="100%" fill="url(#hiveFade)"/></mask>',
-        "</defs>",
-        '<rect width="100%" height="100%" fill="url(#hiveTile)" mask="url(#hiveMask)"/>',
-    ]
-
-    # Circuit traces: a dim wide line with a brighter thin core, like the header.
-    for (x1, y1), (x2, y2) in layout["traces"]:
-        coords = f'x1="{x1}%" y1="{y1}%" x2="{x2}%" y2="{y2}%"'
-        parts.append(f'<line {coords} stroke="{amber}" stroke-opacity="0.12" stroke-width="3"/>')
-        parts.append(f'<line {coords} stroke="{amber}" stroke-opacity="0.45" stroke-width="1"/>')
-
-    # Filled hex pads at trace ends. Nested <svg> lets the position be a %
-    # while the hex itself keeps its true pixel shape at any panel size.
-    pad = _fmt_pts(_svg_hex_pts(0, 0, 4.5))
-    for x, y in layout["nodes"]:
-        parts.append(
-            f'<svg x="{x}%" y="{y}%" overflow="visible"><polygon points="{pad}" '
-            f'fill="{amber}" fill-opacity="0.22" stroke="{amber}" stroke-opacity="0.8" stroke-width="1"/></svg>'
-        )
-
-    # Sparse, partly-open hexes (drawing only `sides` edges reads as "tech").
-    for x, y, radius, alpha, sides in layout["hexes"]:
-        pts = _svg_hex_pts(0, 0, radius)
-        if sides >= 6:
-            shape = f'<polygon points="{_fmt_pts(pts)}"/>'
-        else:
-            shape = f'<polyline points="{_fmt_pts(pts[: sides + 1])}"/>'
-        parts.append(
-            f'<svg x="{x}%" y="{y}%" overflow="visible"><g fill="none" stroke="{amber}" '
-            f'stroke-opacity="{alpha}" stroke-width="1.15">{shape}</g></svg>'
-        )
-    parts.append("</svg>")
-    return "".join(parts)
+    """Quiet layer behind a 3D scene: for the brain view, a faint platform
+    ring the model sits above. (Name kept from the old hive design.)"""
+    if variant != "brain":
+        return ""
+    return (
+        '<div class="nv-dots"></div>'
+        '<svg class="nv-floor" viewBox="0 0 400 80" preserveAspectRatio="xMidYMid meet">'
+        '<ellipse cx="200" cy="40" rx="118" ry="17" fill="none" stroke="#1F6FEB" stroke-opacity=".22"/>'
+        '<ellipse cx="200" cy="40" rx="160" ry="24" fill="none" stroke="#1F6FEB" stroke-opacity=".10"/>'
+        '<ellipse cx="200" cy="40" rx="78" ry="10" fill="#1F6FEB" fill-opacity=".05"/>'
+        "</svg>"
+    )
 
 
 def _hive_page_css() -> str:
     """Page styling shared by the empty state and the rendered Plotly page."""
     return (
         "<style>"
-        f"html,body{{margin:0;padding:0;height:100%;background:{BG_PANEL};overflow:hidden;}}"
-        "#hive-bg{position:fixed;inset:0;z-index:0;pointer-events:none;"
-        "border-radius:12px;overflow:hidden;"
-        # warm centre glow like the header wash, fading to near-black edges
-        "background:radial-gradient(ellipse 70% 65% at 50% 52%,"
-        "rgba(255,159,28,0.09) 0%,rgba(255,159,28,0.03) 45%,rgba(0,0,0,0) 70%),"
-        "linear-gradient(180deg,#0c0a08 0%,#15110d 55%,#0a0a0c 100%);"
-        "box-shadow:inset 0 0 0 1px rgba(255,159,28,0.14);}"
-        ".hive-svg{position:absolute;inset:0;display:block;}"
+        "html,body{margin:0;padding:0;height:100%;background:transparent;overflow:hidden;}"
+        "#hive-bg{position:fixed;inset:0;z-index:0;pointer-events:none;border-radius:12px;overflow:hidden;"
+        "background:radial-gradient(ellipse at 50% 45%,#FFFFFF 0%,#F4F8FE 55%,#E9F1FD 100%);}"
+        # Dot grid behind the 3D brain: fades out toward the card edges.
+        f".nv-dots{{position:absolute;inset:0;"
+        f"background-image:radial-gradient(circle,rgba(31,111,235,{DOT_GRID_ALPHA}) {DOT_GRID_SIZE}px,"
+        f"transparent {DOT_GRID_SIZE + 0.4}px);"
+        f"background-size:{DOT_GRID_SPACING}px {DOT_GRID_SPACING}px;"
+        f"background-position:center center;"
+        "-webkit-mask-image:radial-gradient(ellipse 75% 70% at 50% 50%,#000 35%,transparent 100%);"
+        "mask-image:radial-gradient(ellipse 75% 70% at 50% 50%,#000 35%,transparent 100%);}"
+        ".nv-floor{position:absolute;left:50%;bottom:4%;width:78%;transform:translateX(-50%);}"
         ".plotly-graph-div{position:relative;z-index:1;background:transparent!important;}"
         "#hive-msg{position:relative;z-index:1;height:100%;display:flex;align-items:center;"
         "justify-content:center;font:600 11px 'Segoe UI',sans-serif;letter-spacing:1.6px;"
@@ -3188,7 +3643,7 @@ def _hive_empty_page(variant: str, message: str) -> str:
     return (
         f"<html><head>{_hive_page_css()}</head><body>"
         f"{_hive_backdrop_div(variant)}"
-        f'<div id="hive-msg">\u2b21&nbsp;&nbsp;{message}</div>'
+        f'<div id="hive-msg">{message}</div>'
         "</body></html>"
     )
 
@@ -3207,8 +3662,6 @@ def _inject_hive_backdrop(html_path: str, variant: str):
         path.write_text(content, encoding="utf-8")
     except OSError:
         pass
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 
 
 def _inject_dark_page_style(html_path: str):
@@ -3342,10 +3795,6 @@ def _inject_middle_click_pan(html_path: str):
         pass
 
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
 # ---------------------------------------------------------------------------
 # Auto-rotation for the 3D brain: the camera orbits slowly around the scene's
 # up axis. Any mouse interaction (rotate, zoom, middle-click pan) pauses it,
@@ -3389,10 +3838,12 @@ def _inject_auto_rotate(html_path: str):
                             {capture: true, passive: true});
         gd.addEventListener('touchstart', pause, {capture: true, passive: true});
         gd.addEventListener('touchend', resumeLater, {capture: true, passive: true});
+        // Hold still while a tumour's hover label is showing.
+        if (gd.on) { gd.on('plotly_hover', pause); gd.on('plotly_unhover', resumeLater); }
 
         function tick(now) {
             requestAnimationFrame(tick);
-            if (paused || busy || document.hidden) { last = now; return; }
+            if (paused || busy || document.hidden || window.nvGestureActive) { last = now; return; }
             if (last === null) { last = now; return; }
             if (now - last < FRAME_MS) return;
             var dt = Math.min(0.1, (now - last) / 1000);
@@ -3401,7 +3852,9 @@ def _inject_auto_rotate(html_path: str):
             var cam = gd._fullLayout.scene.camera;
             if (!cam || !cam.eye) return;
             var e = cam.eye, c = cam.center || {x: 0, y: 0, z: 0};
-            var u = cam.up || {x: 0, y: 0, z: 1};
+            var md = (gd.layout && gd.layout.meta && gd.layout.meta.nv_dirs) || null;
+            var u = md ? {x: md.superior[0], y: md.superior[1], z: md.superior[2]}
+                       : (cam.up || {x: 0, y: 0, z: 1});
             var ul = Math.sqrt(u.x * u.x + u.y * u.y + u.z * u.z) || 1;
             var kx = u.x / ul, ky = u.y / ul, kz = u.z / ul;
 
@@ -3436,69 +3889,201 @@ def _inject_auto_rotate(html_path: str):
         pass
 
 
-def _inject_tumor_selection(html_path: str):
-    """Send tumor/background clicks to Qt through a private console prefix."""
+# ---------------------------------------------------------------------------
+# Webcam gesture control: Python sends small camera deltas into the page and
+# this hook orbits / tilts / zooms the Plotly camera. It does nothing unless
+# the Gesture button in the island is switched on.
+# ---------------------------------------------------------------------------
+_GESTURE_HOOK_JS = """
+<script>
+(function() {
+    function rot(v, k, a) {
+        var cs = Math.cos(a), sn = Math.sin(a);
+        var dot = k.x*v.x + k.y*v.y + k.z*v.z;
+        var cx = k.y*v.z - k.z*v.y, cy = k.z*v.x - k.x*v.z, cz = k.x*v.y - k.y*v.x;
+        return {x: v.x*cs + cx*sn + k.x*dot*(1-cs),
+                y: v.y*cs + cy*sn + k.y*dot*(1-cs),
+                z: v.z*cs + cz*sn + k.z*dot*(1-cs)};
+    }
+    function unit(v) { var l = Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z) || 1;
+                       return {x: v.x/l, y: v.y/l, z: v.z/l}; }
+    var busy = false, holdTimer = null;
+    window.nvGestureActive = false;
+    window.nvGesture = function(dAz, dEl, zoom) {
+        var gd = document.querySelector('.plotly-graph-div');
+        if (!gd || !window.Plotly || !gd._fullLayout || !gd._fullLayout.scene || busy) return;
+        window.nvGestureActive = true;               // pauses auto-rotate
+        clearTimeout(holdTimer);
+        holdTimer = setTimeout(function() { window.nvGestureActive = false; }, %(resume)d);
+        var cam = gd._fullLayout.scene.camera;
+        if (!cam || !cam.eye) return;
+        var c = cam.center || {x: 0, y: 0, z: 0};
+        var md = gd.layout && gd.layout.meta && gd.layout.meta.nv_dirs;
+        var k = unit(md ? {x: md.superior[0], y: md.superior[1], z: md.superior[2]}
+                        : (cam.up || {x: 0, y: 0, z: 1}));
+        var v = {x: cam.eye.x - c.x, y: cam.eye.y - c.y, z: cam.eye.z - c.z};
+        v = rot(v, k, dAz);
+        var vl = Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z) || 1;
+        var rr = {x: k.y*v.z - k.z*v.y, y: k.z*v.x - k.x*v.z, z: k.x*v.y - k.y*v.x};
+        if (Math.sqrt(rr.x*rr.x + rr.y*rr.y + rr.z*rr.z) < 1e-6 * vl) {
+            var cu = cam.up || {x: 0, y: 1, z: 0};   // looking straight down: tilt about the screen's side axis
+            rr = {x: k.y*cu.z - k.z*cu.y, y: k.z*cu.x - k.x*cu.z, z: k.x*cu.y - k.y*cu.x};
+        }
+        var r = unit(rr);
+        var t = rot(v, r, dEl);
+        var tl = Math.sqrt(t.x*t.x + t.y*t.y + t.z*t.z) || 1;
+        var cv = Math.abs((k.x*v.x + k.y*v.y + k.z*v.z) / vl);
+        var ct = Math.abs((k.x*t.x + k.y*t.y + k.z*t.z) / tl);
+        if (ct < 0.97 || ct < cv) v = t;
+        var len = Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z) || 1;
+        var s = Math.min(5.0, Math.max(0.6, len * zoom)) / len;
+        busy = true;
+        Plotly.relayout(gd, {'scene.camera.eye': {x: c.x + v.x*s, y: c.y + v.y*s, z: c.z + v.z*s}})
+            .then(function() { busy = false; }, function() { busy = false; });
+    };
+})();
+</script>
+""" % {"resume": int(AUTO_ROTATE_RESUME_MS)}
+
+
+def _inject_gesture_hook(html_path: str):
     try:
         path = Path(html_path)
         content = path.read_text(encoding="utf-8")
     except OSError:
         return
-
-    script_block = """
-<script>
-(function() {
-    function setupTumorSelection() {
-        var gd = document.querySelector('.plotly-graph-div');
-        if (!gd || !gd.on) { setTimeout(setupTumorSelection, 100); return; }
-
-        var downX = 0, downY = 0, plotlyHit = false;
-        gd.addEventListener('mousedown', function(e) {
-            if (e.button !== 0) return;
-            downX = e.clientX; downY = e.clientY; plotlyHit = false;
-        });
-        gd.on('plotly_click', function(data) {
-            plotlyHit = true;
-            var point = data && data.points && data.points[0];
-            var meta = point && point.data && point.data.meta;
-            var id = meta && meta.tumor_component_id;
-            console.log('__TUMOR_SELECT__:' + (id == null ? 'all' : id));
-        });
-        gd.addEventListener('mouseup', function(e) {
-            if (e.button !== 0) return;
-            var moved = Math.hypot(e.clientX - downX, e.clientY - downY) > 4;
-            setTimeout(function() {
-                if (!moved && !plotlyHit) console.log('__TUMOR_SELECT__:all');
-            }, 80);
-        });
-    }
-    setupTumorSelection();
-})();
-</script>
-"""
     if "</body>" in content:
-        content = content.replace("</body>", f"{script_block}</body>", 1)
+        content = content.replace("</body>", f"{_GESTURE_HOOK_JS}</body>", 1)
     else:
-        content += script_block
+        content += _GESTURE_HOOK_JS
     try:
         path.write_text(content, encoding="utf-8")
     except OSError:
         pass
 
 
-class _PlotlyPage(QWebEnginePage):
-    tumor_selected = Signal(object)
+# ---------------------------------------------------------------------------
+# 3D page tools, injected into every 3D page and called from Python:
+#   nvSetSlices([sag, cor, ax])  move the three slice planes (display-grid indices)
+#   nvFocus(rank)                fade every tumour except `rank` (0 = show all)
+#   nvFlyTo('front'|'side'|'top') animate the camera to a standard view
+# Everything they need (trace indices, bounds, scan orientation) is written
+# into layout.meta by build_3d_figures().
+# ---------------------------------------------------------------------------
+_BRAIN_TOOLS_JS = """
+<script>
+(function() {
+    function graph() {
+        var gd = document.querySelector('.plotly-graph-div');
+        if (!gd || !window.Plotly || !gd._fullLayout || !gd._fullLayout.scene || !gd.layout) return null;
+        return gd;
+    }
+    function whenReady(fn, tries) {
+        var gd = graph();
+        if (gd) { fn(gd, gd.layout.meta || {}); return; }
+        if ((tries || 0) < 60) setTimeout(function() { whenReady(fn, (tries || 0) + 1); }, 100);
+    }
+    var AX = ['x', 'y', 'z'];
+    function quad(a, p, B) {
+        var b = (a + 1) % 3, c = (a + 2) % 3;
+        var pts = [[B[b][0], B[c][0]], [B[b][1], B[c][0]], [B[b][1], B[c][1]], [B[b][0], B[c][1]]];
+        var out = {x: [], y: [], z: []};
+        pts.forEach(function(q) {
+            var v = [0, 0, 0]; v[a] = p; v[b] = q[0]; v[c] = q[1];
+            out.x.push(v[0]); out.y.push(v[1]); out.z.push(v[2]);
+        });
+        return out;
+    }
+    window.nvSetSlices = function(idx) {
+        whenReady(function(gd, m) {
+            var P = m.nv_planes, B = m.nv_bounds, S = m.nv_scale;
+            if (!P || !B || !S) return;
+            var upd = {x: [], y: [], z: []}, ids = [];
+            for (var a = 0; a < 3; a++) {
+                var pair = P[String(a)];
+                if (!pair || idx[a] === null || idx[a] === undefined) continue;
+                var q = quad(a, idx[a] * S[a], B);
+                upd.x.push(q.x); upd.y.push(q.y); upd.z.push(q.z); ids.push(pair[0]);
+                upd.x.push(q.x.concat([q.x[0]])); upd.y.push(q.y.concat([q.y[0]]));
+                upd.z.push(q.z.concat([q.z[0]])); ids.push(pair[1]);
+            }
+            if (ids.length) Plotly.restyle(gd, upd, ids);
+        });
+    };
+    window.nvFocus = function(rank) {
+        whenReady(function(gd, m) {
+            var T = m.nv_tumours || [], ops = [], ids = [];
+            T.forEach(function(t) { ids.push(t.i); ops.push(!rank || t.rank === rank ? 1.0 : 0.13); });
+            (m.nv_brain || []).forEach(function(i) {
+                ids.push(i); ops.push(rank ? (m.nv_shell_focus || 0.07) : (m.nv_shell || 0.16));
+            });
+            if (ids.length) Plotly.restyle(gd, {opacity: ops}, ids);
+        });
+    };
+    window.nvFlyTo = function(name, wantDist) {
+        whenReady(function(gd, m) {
+            var D = m.nv_dirs; if (!D) return;
+            var cam = gd._fullLayout.scene.camera, c = cam.center || {x: 0, y: 0, z: 0};
+            var e0 = {x: cam.eye.x - c.x, y: cam.eye.y - c.y, z: cam.eye.z - c.z};
+            var dist = wantDist || Math.sqrt(e0.x * e0.x + e0.y * e0.y + e0.z * e0.z) || 2;
+            var dir = name === 'front' ? D.anterior : (name === 'side' ? D.left : D.superior);
+            var up = name === 'top' ? D.anterior : D.superior;
+            var e1 = {x: dir[0] * dist, y: dir[1] * dist, z: dir[2] * dist};
+            var u0 = cam.up || {x: 0, y: 0, z: 1}, u1 = {x: up[0], y: up[1], z: up[2]};
+            window.nvGestureActive = true;
+            clearTimeout(window._nvFlyHold);
+            var t0 = null, T = 700;
+            function mix(a, b, s) { return {x: a.x + (b.x - a.x) * s, y: a.y + (b.y - a.y) * s, z: a.z + (b.z - a.z) * s}; }
+            function step(now) {
+                if (t0 === null) t0 = now;
+                var k = Math.min(1, (now - t0) / T);
+                var s = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+                var v = mix(e0, e1, s), l = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+                if (l < 1e-3) { v = mix(e0, e1, Math.min(1, s + 0.05)); l = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) || 1; }
+                var eye = {x: c.x + v.x / l * dist, y: c.y + v.y / l * dist, z: c.z + v.z / l * dist};
+                Plotly.relayout(gd, {'scene.camera.eye': eye, 'scene.camera.up': mix(u0, u1, s)}).then(function() {
+                    if (k < 1) requestAnimationFrame(step);
+                    else window._nvFlyHold = setTimeout(function() { window.nvGestureActive = false; }, __RESUME__);
+                });
+            }
+            requestAnimationFrame(step);
+        });
+    };
+    window.nvActivePlane = function(axis) {
+        whenReady(function(gd, m) {
+            var P = m.nv_planes; if (!P) return;
+            var base = m.nv_plane_opacity || 0.14, ops = [], widths = [], meshes = [], edges = [];
+            for (var a = 0; a < 3; a++) {
+                var pair = P[String(a)]; if (!pair) continue;
+                var on = axis === null || axis === undefined || axis === a;
+                meshes.push(pair[0]); ops.push(axis === null || axis === undefined ? base : (on ? 0.26 : 0.05));
+                edges.push(pair[1]); widths.push(on ? (axis === null || axis === undefined ? 3 : 5) : 1.5);
+            }
+            if (meshes.length) Plotly.restyle(gd, {opacity: ops}, meshes);
+            if (edges.length) Plotly.restyle(gd, {'line.width': widths}, edges);
+        });
+    };
+})();
+</script>
+""".replace("__RESUME__", str(int(AUTO_ROTATE_RESUME_MS)))
 
-    def javaScriptConsoleMessage(self, level, message, line_number, source_id):
-        prefix = "__TUMOR_SELECT__:"
-        if message.startswith(prefix):
-            value = message[len(prefix):]
-            self.tumor_selected.emit(None if value == "all" else int(value))
-            return
-        super().javaScriptConsoleMessage(level, message, line_number, source_id)
+
+def _inject_brain_tools(html_path: str):
+    try:
+        path = Path(html_path)
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    if "</body>" in content:
+        content = content.replace("</body>", f"{_BRAIN_TOOLS_JS}</body>", 1)
+    else:
+        content += _BRAIN_TOOLS_JS
+    try:
+        path.write_text(content, encoding="utf-8")
+    except OSError:
+        pass
 
 
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 class Panel3D(HivePanel):
     """
     A bordered panel that shows an interactive 3D Plotly figure (rotate,
@@ -3509,12 +4094,22 @@ class Panel3D(HivePanel):
     user-chosen path.
     """
 
-    EMPTY_MESSAGE = "Run segmentation or SAM to render"
-    tumor_selected = Signal(object)
+    MSG_NO_CASE = "Load an MRI folder to begin"
+    MSG_READY = "Run segmentation to render"
 
     def __init__(self, title: str, min_height: int = 200, accent: str = ACCENT_TEAL,
-                 backdrop: str = "brain", auto_rotate: bool = False):
+                 backdrop: str = "brain", auto_rotate: bool = False,
+                 meta: str = "", subtitle: str = "", view_toggle: bool = False):
         super().__init__()
+        self._view_mode = "All"
+        self._slices = [None, None, None]   # display-grid index per axis (sagittal, coronal, axial)
+        self._focus = 0
+        self._active_plane = None           # slice plane highlighted while gesture-slicing
+        self._slice_timer = QTimer(self)
+        self._slice_timer.setSingleShot(True)
+        self._slice_timer.setInterval(33)    # coalesce slider drags to ~30 updates/s
+        self._slice_timer.timeout.connect(self._push_slices)
+        self.presets = None
         self.accent = accent
         self.backdrop = backdrop
         self.auto_rotate = auto_rotate
@@ -3530,15 +4125,36 @@ class Panel3D(HivePanel):
         layout.setContentsMargins(12, 10, 12, 12)
         layout.setSpacing(4)
 
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(4)
-        header.addStretch(1)
-        self.title_label = TechLabel(title)
-        header.addWidget(self.title_label)
-        header.addStretch(1)
+        self.view_toggle = None
+        if view_toggle:
+            layout.setContentsMargins(18, 16, 18, 14)
+            header = QHBoxLayout()
+            header.setContentsMargins(0, 0, 0, 6)
+            header.setSpacing(8)
+            text_col = QVBoxLayout()
+            text_col.setContentsMargins(0, 0, 0, 0)
+            text_col.setSpacing(1)
+            self.title_label = QLabel(title)
+            self.title_label.setStyleSheet(
+                f"border: none; background: transparent; color: {TEXT_LIGHT}; font-size: 15px; font-weight: 600;"
+            )
+            text_col.addWidget(self.title_label)
+            sub = QLabel(subtitle)
+            sub.setStyleSheet(f"border: none; background: transparent; color: {TEXT_MUTED}; font-size: 12px;")
+            text_col.addWidget(sub)
+            header.addLayout(text_col)
+            header.addStretch(1)
+            self.view_toggle = _SegmentedToggle(("All", "Tumour", "Brain"))
+            self.view_toggle.changed.connect(self.set_view_mode)
+            header.addWidget(self.view_toggle, 0, Qt.AlignVCenter)
+            self.presets = _PresetChips()
+            self.presets.chosen.connect(self.fly_to)
+            header.addWidget(self.presets, 0, Qt.AlignVCenter)
+            self.meta_label = None
+        else:
+            header, self.title_label, self.meta_label = _card_head(title, meta)
         self.maximize_btn = _fullscreen_button("Maximize")
-        header.addWidget(self.maximize_btn)
+        header.addWidget(self.maximize_btn, 0, Qt.AlignVCenter)
         layout.addLayout(header)
 
         view_host = QWidget()
@@ -3546,52 +4162,92 @@ class Panel3D(HivePanel):
         view_stack.setStackingMode(QStackedLayout.StackAll)
 
         self.web_view = QWebEngineView()
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
         self.web_view.setStyleSheet(f"background-color: {BG_PANEL}; border: none;")
-        self.web_view.page().setBackgroundColor(QColor(BG_PANEL))
-        self.web_view.setHtml(
-            f"<html><body style='margin:0;background:{BG_PANEL};'></body></html>"
-        )
-        view_stack.addWidget(self.web_view)
-
-        self.placeholder_label = QLabel("(run segmentation to render)")
-        self.placeholder_label.setAlignment(Qt.AlignCenter)
-        self.placeholder_label.setStyleSheet(
-            f"border: none; color: {TEXT_MUTED}; font-size: 12px; background: {BG_PANEL};"
-        )
-        view_stack.addWidget(self.placeholder_label)
-        self.placeholder_label.raise_()
-<<<<<<< Updated upstream
-=======
-=======
-        self._plotly_page = _PlotlyPage(self.web_view)
-        self._plotly_page.tumor_selected.connect(self.tumor_selected.emit)
-        self.web_view.setPage(self._plotly_page)
-        self.web_view.setStyleSheet(f"background-color: {BG_PANEL}; border: none;")
-        self.web_view.page().setBackgroundColor(QColor(BG_PANEL))
+        self.web_view.page().setBackgroundColor(Qt.transparent)
+        # Drops fall through to the window (open a patient folder anywhere).
+        self.web_view.setAcceptDrops(False)
+        self.web_view.loadFinished.connect(lambda _ok: self._on_page_loaded())
         # Empty state is drawn inside the page itself, so the hive backdrop
         # is visible before anything has been segmented.
-        self.web_view.setHtml(_hive_empty_page(self.backdrop, self.EMPTY_MESSAGE))
+        self._empty_message = self.MSG_NO_CASE
+        self._has_figure = False
+        self.web_view.setHtml(_hive_empty_page(self.backdrop, self._empty_message))
         view_stack.addWidget(self.web_view)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
+        self._view_stack = view_stack
+        self._build_camera_preview()
         layout.addWidget(view_host, stretch=1)
+        self.legend = None
+        if view_toggle:
+            self.legend = _LegendPill()
+            self.legend.focus_changed.connect(self.set_focus)
+            layout.addSpacing(6)
+            layout.addWidget(self.legend, 0, Qt.AlignHCenter)
 
         self._layout = layout
         self._temp_files = []  # keep references so temp files aren't GC'd/deleted early
 
-    def set_figure(self, fig: go.Figure):
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-        self.placeholder_label.hide()
+    # ---- webcam gesture preview (hidden until Gesture is switched on) ----
+    def _build_camera_preview(self):
+        """Small dark webcam card in the bottom-right corner of the 3D view."""
+        self.cam_layer = QWidget()
+        self.cam_layer.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.cam_layer.setStyleSheet("background: transparent;")
+        col = QVBoxLayout(self.cam_layer)
+        col.setContentsMargins(10, 10, 10, 10)
+        col.addStretch(1)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        card = QFrame()
+        card.setObjectName("camCard")
+        card.setStyleSheet(
+            f"QFrame#camCard {{ background: {ISLAND_BG}; border-radius: 12px; }}"
+            "QFrame#camCard QLabel { background: transparent; border: none; }"
+        )
+        inner = QVBoxLayout(card)
+        inner.setContentsMargins(6, 6, 6, 6)
+        inner.setSpacing(4)
+        self.cam_preview = QLabel()
+        self.cam_preview.setFixedSize(176, 132)
+        self.cam_preview.setAlignment(Qt.AlignCenter)
+        self.cam_state = QLabel("Show an open palm")
+        self.cam_state.setAlignment(Qt.AlignCenter)
+        self.cam_state.setStyleSheet(f"color: {ISLAND_TEXT}; font-size: 10px; font-weight: 600;")
+        inner.addWidget(self.cam_preview)
+        inner.addWidget(self.cam_state)
+        row.addWidget(card)
+        col.addLayout(row)
+        self.cam_layer.hide()
+        self._view_stack.addWidget(self.cam_layer)
 
-=======
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
+    def show_camera_preview(self, on: bool):
+        self.cam_layer.setVisible(on)
+        if on:
+            self.cam_layer.raise_()
+        else:
+            self.cam_preview.clear()
+
+    def set_camera_frame(self, img: QImage):
+        if self.cam_layer.isVisible():
+            self.cam_preview.setPixmap(QPixmap.fromImage(img).scaled(
+                self.cam_preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def set_camera_state(self, text: str):
+        self.cam_state.setText(text)
+
+    def send_gesture(self, d_az: float, d_el: float, zoom: float):
+        if self._has_figure:
+            self.web_view.page().runJavaScript(
+                f"window.nvGesture&&window.nvGesture({d_az:.5f},{d_el:.5f},{zoom:.5f});"
+            )
+
+    def set_empty_message(self, message: str):
+        """Hint shown while the panel is empty; refreshed immediately if empty."""
+        self._empty_message = message
+        if not self._has_figure:
+            self.web_view.setHtml(_hive_empty_page(self.backdrop, message))
+
+    def set_figure(self, fig: go.Figure):
+        self._has_figure = True
         # Hide Plotly's icon toolbar (zoom/pan/camera/reset buttons) — the
         # panel is still fully interactive via mouse drag/scroll, just
         # without the visible icon strip.
@@ -3608,46 +4264,89 @@ class Panel3D(HivePanel):
         )
         _inject_hive_backdrop(tmp.name, self.backdrop)
         _inject_middle_click_pan(tmp.name)
-        _inject_tumor_selection(tmp.name)
+        _inject_gesture_hook(tmp.name)
+        _inject_brain_tools(tmp.name)
         if self.auto_rotate:
             _inject_auto_rotate(tmp.name)
         self._temp_files.append(tmp.name)
         self.web_view.load(QUrl.fromLocalFile(tmp.name))
         QTimer.singleShot(0, self._sync_hive_overlay)
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
-
-    def select_tumor(self, component_id: Optional[int]):
-        """Show one tumor trace, or all tumor traces when component_id is None."""
-        selected = "null" if component_id is None else str(int(component_id))
-        script = f"""
-        (function() {{
-            var gd = document.querySelector('.plotly-graph-div');
-            if (!gd || !gd.data) return;
-            var selected = {selected};
-            var visibility = gd.data.map(function(trace) {{
-                var meta = trace.meta || {{}};
-                var id = meta.tumor_component_id;
-                return id == null || selected == null || id === selected;
-            }});
-            Plotly.restyle(gd, {{visible: visibility}});
-        }})();
-        """
-        self.web_view.page().runJavaScript(script)
 
     def clear_figure(self):
         """Restore the empty state when there is no tumor mask to render."""
-        self.web_view.setHtml(_hive_empty_page(self.backdrop, self.EMPTY_MESSAGE))
+        self._has_figure = False
+        self.web_view.setHtml(_hive_empty_page(self.backdrop, self._empty_message))
         self._sync_hive_overlay()
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 
     def set_maximized(self, is_max: bool):
         self.maximize_btn.setText("🗗" if is_max else "⛶")
         self.maximize_btn.setToolTip("Restore" if is_max else "Maximize")
         self._sync_hive_overlay()
+
+    def set_legend(self, items):
+        if self.legend is not None:
+            self.legend.set_items(items)
+
+    def _on_page_loaded(self):
+        """A new 3D page finished loading: re-apply view mode, planes and focus."""
+        self._apply_view_mode()
+        if self._has_figure:
+            self._push_slices()
+            if self._focus:
+                self._run_js(f"window.nvFocus&&window.nvFocus({int(self._focus)});")
+            if self._active_plane is not None:
+                self.set_active_plane(self._active_plane)
+
+    def _run_js(self, js: str):
+        if self._has_figure:
+            self.web_view.page().runJavaScript(js)
+
+    def set_slice(self, axis: int, index: int):
+        """Move one slice plane (called as a 2D slider moves)."""
+        self._slices[axis] = int(index)
+        if not self._slice_timer.isActive():
+            self._slice_timer.start()
+
+    def _push_slices(self):
+        vals = ",".join("null" if v is None else str(int(v)) for v in self._slices)
+        self._run_js(f"window.nvSetSlices&&window.nvSetSlices([{vals}]);")
+
+    def set_active_plane(self, axis: Optional[int]):
+        """Draw one slice plane stronger and fade the other two (None = all equal)."""
+        self._active_plane = axis
+        self._run_js(f"window.nvActivePlane&&window.nvActivePlane({'null' if axis is None else int(axis)});")
+
+    def set_focus(self, rank: int):
+        """Highlight one tumour (rank 1 = largest) and fade the rest; 0 = all."""
+        self._focus = int(rank)
+        self._run_js(f"window.nvFocus&&window.nvFocus({int(rank)});")
+
+    def fly_to(self, view: str, distance: Optional[float] = None):
+        """Animate the camera to 'front', 'side' or 'top' (optionally at a set zoom)."""
+        if view in ("front", "side", "top"):
+            d = "" if distance is None else f",{float(distance):.3f}"
+            self._run_js(f"window.nvFlyTo&&window.nvFlyTo('{view}'{d});")
+
+    def set_view_mode(self, mode: str):
+        """All / Tumour / Brain: toggles trace visibility inside the Plotly page.
+        The brain trace indices are tagged in layout.meta by build_brain_figure."""
+        self._view_mode = mode
+        self._apply_view_mode()
+
+    def _apply_view_mode(self):
+        if not self._has_figure or self.view_toggle is None:
+            return
+        js = (
+            "(function(){var gd=document.querySelector('.plotly-graph-div');"
+            "if(!gd||!window.Plotly||!gd.data)return;"
+            "var md=(gd.layout&&gd.layout.meta)||{};var b=md.nv_brain||[];"
+            "var pl=[];var P=md.nv_planes||{};Object.keys(P).forEach(function(k){pl=pl.concat(P[k]);});"
+            f"var mode='{self._view_mode}';"
+            "var vis=gd.data.map(function(t,i){if(pl.indexOf(i)>=0)return true;var isB=b.indexOf(i)>=0;"
+            "return mode==='All'?true:(mode==='Brain'?isB:!isB);});"
+            "Plotly.restyle(gd,{visible:vis});})();"
+        )
+        self.web_view.page().runJavaScript(js)
 
 
 def _style_ui_figure(fig: go.Figure) -> go.Figure:
@@ -3667,8 +4366,7 @@ def _style_ui_figure(fig: go.Figure) -> go.Figure:
     return fig
 
 
-def _prepare_3d(volume: np.ndarray, mask: Optional[np.ndarray], affine: np.ndarray,
-                labels: Optional[np.ndarray] = None):
+def _prepare_3d(volume: np.ndarray, mask: Optional[np.ndarray], affine: np.ndarray):
     """Downsample for marching cubes and convert the affine into voxel spacing."""
     spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0)).astype(np.float64)
     longest = float(max(volume.shape))
@@ -3679,14 +4377,239 @@ def _prepare_3d(volume: np.ndarray, mask: Optional[np.ndarray], affine: np.ndarr
         volume = zoom(volume, zooms, order=1)
         if mask is not None:
             mask = (zoom(mask.astype(np.float32), zooms, order=0) > 0.5).astype(np.float32)
-        if labels is not None:
-            # Nearest-neighbour preserves the full-resolution component IDs.
-            labels = zoom(labels.astype(np.int32), zooms, order=0).astype(np.int32)
         spacing = spacing / factor
-    return volume, mask, labels, tuple(float(s) for s in spacing)
+    return volume, mask, tuple(float(s) for s in spacing)
 
 
-def build_tumor_figure(mask: np.ndarray, spacing: tuple, labels=None, color_map=None) -> go.Figure:
+# ---------------------------------------------------------------------------
+# 3D figures for the app: glass brain shell, smooth tumour meshes coloured
+# exactly like the 2D overlays and the report, and three slice planes.
+# Tweak the look with these numbers.
+# ---------------------------------------------------------------------------
+TUMOUR_SMOOTH_SIGMA = 1.2      # blur (in display voxels) before meshing; 0 = blocky voxel look
+BRAIN_SHELL_OPACITY = 0.16     # glass shell opacity (0-1)
+BRAIN_SHELL_FOCUS_OPACITY = 0.07   # shell opacity while one tumour is focused
+SHELL_LIGHTING = dict(ambient=0.45, diffuse=0.5, specular=0.9, roughness=0.25, fresnel=2.6)
+TUMOUR_LIGHTING = dict(ambient=0.55, diffuse=0.75, specular=0.55, roughness=0.35, fresnel=0.5)
+SLICE_PLANE_COLORS = {0: "#12A594", 1: "#8E6CEF", 2: "#1F6FEB"}   # sagittal, coronal, axial
+SLICE_PLANE_OPACITY = 0.14
+_HOVER_LABEL = dict(bgcolor="#0A1224", bordercolor="#0A1224",
+                    font=dict(family="Segoe UI, sans-serif", size=12, color="#FFFFFF"))
+
+
+def _component_table(mask: np.ndarray, probs: Optional[np.ndarray], voxel_vol_cm3: float):
+    """Connected tumour components ranked largest-first, each with its
+    COMPONENT_PALETTE colour. Shared by the 2D views, the report and 3D, so the
+    same tumour has the same colour everywhere. Returns (labels, entries, color_map)."""
+    labels, n_components = ndi_label(mask > 0.5)
+    entries = []
+    for label_id in range(1, n_components + 1):
+        comp_mask = labels == label_id
+        voxels = int(comp_mask.sum())
+        if voxels == 0:
+            continue
+        entries.append({
+            "label_id": label_id,
+            "voxels": voxels,
+            "volume_cm3": voxels * voxel_vol_cm3,
+            "confidence": float(probs[comp_mask].mean()) if probs is not None else None,
+        })
+    entries.sort(key=lambda e: e["volume_cm3"], reverse=True)
+    color_map = {}
+    for rank, entry in enumerate(entries):
+        color_name, color_hex = COMPONENT_PALETTE[rank % len(COMPONENT_PALETTE)]
+        entry["rank"] = rank + 1
+        entry["color_name"] = color_name
+        entry["color_hex"] = color_hex
+        color_map[entry["label_id"]] = color_hex
+    return labels, entries, color_map
+
+
+def _anatomy_dirs(axcodes) -> dict:
+    """Unit vectors (in scene x/y/z) pointing to the patient's left, front and
+    top, from the scan's orientation codes (nibabel.aff2axcodes)."""
+    codes = tuple(axcodes) if axcodes else ("L", "P", "S")   # BraTS default
+    out = {}
+    for key, (pos, neg) in (("left", ("L", "R")), ("anterior", ("A", "P")), ("superior", ("S", "I"))):
+        v = [0.0, 0.0, 0.0]
+        for a, code in enumerate(codes[:3]):
+            if code == pos:
+                v[a] = 1.0
+            elif code == neg:
+                v[a] = -1.0
+        if not any(v):
+            v[{"left": 0, "anterior": 1, "superior": 2}[key]] = 1.0
+        out[key] = v
+    return out
+
+
+def _prepare_3d_labels(volume: np.ndarray, labels: Optional[np.ndarray], affine: np.ndarray):
+    """Downsample volume + component labels for meshing. Also returns, per
+    axis, the factor that turns a 2D slider index into a 3D scene coordinate."""
+    display_shape = volume.shape
+    spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0)).astype(np.float64)
+    longest = float(max(volume.shape))
+    factor = min(1.0, RENDER_MAX_DIM / longest) if longest else 1.0
+    if factor < 0.99:
+        new_shape = tuple(max(8, int(round(size * factor))) for size in volume.shape)
+        zooms = [new / old for new, old in zip(new_shape, volume.shape)]
+        volume = zoom(volume, zooms, order=1)
+        if labels is not None:
+            labels = zoom(labels.astype(np.int32), zooms, order=0)
+        spacing = spacing / factor
+    scale = [float(spacing[a] * (volume.shape[a] - 1) / max(1, display_shape[a] - 1)) for a in range(3)]
+    return volume, labels, tuple(float(s) for s in spacing), scale
+
+
+def _tumour_meshes(labels: np.ndarray, comps: list, scale: list) -> list:
+    """One smooth surface per tumour, as plain dicts (reused by both figures).
+
+    Meshed from the full display-grid labels, cropped to each tumour, so even
+    small tumours survive (downsampling for the brain shell would erase them)
+    and the surface is finer. `scale` maps a display-grid index to the 3D
+    scene coordinate used by the brain shell and the slice planes."""
+    out = []
+    pad = 3
+    sc = np.array(scale, dtype=np.float64)
+    for c in comps:
+        comp = labels == c["label_id"]
+        hits = np.argwhere(comp)
+        if hits.size == 0:
+            continue
+        lo = hits.min(axis=0)
+        hi = hits.max(axis=0) + 1
+        crop = comp[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]].astype(np.float32)
+        vol = np.pad(crop, pad)   # so the surface closes around the tumour
+        if TUMOUR_SMOOTH_SIGMA > 0:
+            vol = gaussian_filter(vol, TUMOUR_SMOOTH_SIGMA)
+        peak = float(vol.max())
+        if peak <= 0:
+            continue
+        level = 0.5 if peak > 0.55 else peak * 0.5   # tiny tumours fade under the blur
+        try:
+            verts, faces, _, _ = marching_cubes(vol, level=level, spacing=tuple(sc))
+        except (ValueError, RuntimeError):
+            continue
+        if len(faces) == 0:
+            continue
+        verts = verts + (lo - pad) * sc
+        conf = c.get("confidence")
+        conf_txt = "Refined with MedSAM2" if conf is None else f"Confidence  {conf * 100:.1f}%"
+        loc = c.get("location") or ""
+        out.append(dict(
+            x=verts[:, 0], y=verts[:, 1], z=verts[:, 2],
+            i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+            color=c["color_hex"], opacity=1.0, flatshading=False,
+            lighting=TUMOUR_LIGHTING, lightposition=dict(x=1000, y=1500, z=2500),
+            name=f"Tumour {c['rank']}", showlegend=False,
+            hovertemplate=(f"<b>Tumour {c['rank']}</b><br>Volume  {c['volume_cm3']:.2f} cm\u00b3<br>"
+                           f"{conf_txt}" + (f"<br>{loc}" if loc else "") + "<extra></extra>"),
+            hoverlabel=_HOVER_LABEL,
+            rank=c["rank"],
+        ))
+    return out
+
+
+def _add_tumours(fig: go.Figure, meshes: list) -> list:
+    """Append the tumour meshes; returns [{'i': trace index, 'rank': n}]."""
+    tagged = []
+    for m in meshes:
+        kw = {k: v for k, v in m.items() if k != "rank"}
+        fig.add_trace(go.Mesh3d(**kw))
+        tagged.append({"i": len(fig.data) - 1, "rank": int(m["rank"])})
+    return tagged
+
+
+def _add_slice_planes(fig: go.Figure, volume_3d: np.ndarray, spacing: tuple, level: float) -> tuple:
+    """Three translucent planes (sagittal, coronal, axial) with outlines.
+    Returns (bounds, {axis: [mesh index, outline index]})."""
+    hits = np.argwhere(volume_3d > level)
+    if hits.size:
+        lo, hi = hits.min(axis=0), hits.max(axis=0)
+    else:
+        lo, hi = np.zeros(3), np.array(volume_3d.shape) - 1
+    bounds = []
+    for a in range(3):
+        a0, a1 = float(lo[a] * spacing[a]), float(hi[a] * spacing[a])
+        m = (a1 - a0) * 0.04
+        bounds.append([a0 - m, a1 + m])
+    planes = {}
+    for a in range(3):
+        b, c = (a + 1) % 3, (a + 2) % 3
+        mid = (bounds[a][0] + bounds[a][1]) / 2
+        pts = []
+        for qb, qc in ((0, 0), (1, 0), (1, 1), (0, 1)):
+            v = [0.0, 0.0, 0.0]
+            v[a], v[b], v[c] = mid, bounds[b][qb], bounds[c][qc]
+            pts.append(v)
+        xs, ys, zs = zip(*pts)
+        color = SLICE_PLANE_COLORS[a]
+        fig.add_trace(go.Mesh3d(
+            x=list(xs), y=list(ys), z=list(zs), i=[0, 0], j=[1, 2], k=[2, 3],
+            color=color, opacity=SLICE_PLANE_OPACITY, flatshading=True,
+            lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0), hoverinfo="skip",
+            showlegend=False, name=f"plane-{a}",
+        ))
+        mesh_i = len(fig.data) - 1
+        fig.add_trace(go.Scatter3d(
+            x=list(xs) + [xs[0]], y=list(ys) + [ys[0]], z=list(zs) + [zs[0]],
+            mode="lines", line=dict(color=color, width=3), hoverinfo="skip",
+            showlegend=False, name=f"plane-{a}-edge",
+        ))
+        planes[str(a)] = [mesh_i, len(fig.data) - 1]
+    return bounds, planes
+
+
+def build_3d_figures(display_volume: np.ndarray, mask: Optional[np.ndarray],
+                     probs: Optional[np.ndarray], affine: np.ndarray, axcodes=None):
+    """Both 3D figures for one case: (tumour figure or None, brain figure)."""
+    voxel_vol_cm3 = float(np.prod(np.sqrt((affine[:3, :3] ** 2).sum(axis=0)))) / 1000.0
+    labels, comps = None, []
+    if mask is not None and np.any(mask > 0.5):
+        labels, comps, _ = _component_table(mask, probs, voxel_vol_cm3)
+        brain_mask = _brain_tissue_mask(display_volume, mask)
+        for c in comps:
+            loc = _rough_location(labels == c["label_id"], brain_mask, axcodes)
+            if loc:
+                side, ap, _si = loc
+                c["location"] = ("Midline" if side == "Midline" else f"{side} hemisphere") + f" · {ap}"
+    volume_3d, labels_3d, spacing, scale = _prepare_3d_labels(display_volume, labels, affine)
+    meshes = _tumour_meshes(labels, comps, scale) if comps else []
+    dirs = _anatomy_dirs(axcodes)
+
+    # Brain: shell from the shared viewer, restyled as glass.
+    brain_fig = show_volume_3d(volume_3d, None, show_brain=True, spacing=spacing,
+                               title="3D brain", clean=True, show_legend=False)
+    brain_idx = []
+    if len(brain_fig.data):
+        brain_fig.data[0].update(color=BRAIN_SHELL_COLOR, opacity=BRAIN_SHELL_OPACITY,
+                                 lighting=SHELL_LIGHTING, lightposition=dict(x=1000, y=1500, z=2500),
+                                 hoverinfo="skip")
+        brain_idx = [0]
+    level = float((brain_fig.layout.meta or {}).get("surface_level", brain_surface_level(volume_3d)))
+    tumours = _add_tumours(brain_fig, meshes)
+    bounds, planes = _add_slice_planes(brain_fig, volume_3d, spacing, level)
+    brain_fig.update_layout(meta={
+        "nv_brain": brain_idx, "nv_tumours": tumours, "nv_planes": planes,
+        "nv_bounds": bounds, "nv_scale": scale, "nv_dirs": dirs,
+        "nv_shell": BRAIN_SHELL_OPACITY, "nv_shell_focus": BRAIN_SHELL_FOCUS_OPACITY,
+        "nv_plane_opacity": SLICE_PLANE_OPACITY,
+    })
+    _style_ui_figure(brain_fig)
+
+    tumor_fig = None
+    if meshes:
+        tumor_fig = show_volume_3d(labels_3d.astype(np.float32), None, show_brain=False, level=0.5,
+                                   spacing=spacing, title="3D tumor", clean=True, show_legend=False)
+        t_tags = _add_tumours(tumor_fig, meshes)
+        tumor_fig.update_layout(meta={"nv_brain": [], "nv_tumours": t_tags, "nv_dirs": dirs,
+                                      "nv_shell": BRAIN_SHELL_OPACITY,
+                                      "nv_shell_focus": BRAIN_SHELL_FOCUS_OPACITY})
+        _style_ui_figure(tumor_fig)
+    return tumor_fig, brain_fig
+
+
+def build_tumor_figure(mask: np.ndarray, spacing: tuple) -> go.Figure:
     """Tumor mesh alone, from the shared 3D viewer."""
     fig = show_volume_3d(
         mask,
@@ -3694,31 +4617,18 @@ def build_tumor_figure(mask: np.ndarray, spacing: tuple, labels=None, color_map=
         show_brain=False,
         level=0.5,
         min_voxels=25,
-        component_labels=labels,
-        component_colours=color_map,
         spacing=spacing,
         title="3D tumor",
         clean=True,
         show_legend=False,
     )
-    return _style_ui_figure(_tag_tumor_traces(fig))
-
-
-def _tag_tumor_traces(fig: go.Figure) -> go.Figure:
-    """Attach stable component IDs used by the embedded Plotly click bridge."""
-    for trace in fig.data:
-        match = re.match(r"^#(\d+)\b", str(trace.name or ""))
-        trace.meta = (
-            {"tumor_component_id": int(match.group(1))}
-            if match else {"surface": "brain"}
-        )
-    return fig
+    return _style_ui_figure(fig)
 
 
 def build_brain_figure(
     volume: np.ndarray,
     mask: Optional[np.ndarray],
-    spacing: tuple, labels=None, color_map=None,
+    spacing: tuple,
 ) -> go.Figure:
     """Brain shell, with the tumor inside it when a mask is available."""
     fig = show_volume_3d(
@@ -3726,14 +4636,63 @@ def build_brain_figure(
         mask,
         show_brain=True,
         min_voxels=25 if mask is not None else 1,
-        component_labels=labels,
-        component_colours=color_map,
         spacing=spacing,
         title="3D brain",
         clean=True,
         show_legend=False,
     )
-    return _style_ui_figure(_tag_tumor_traces(fig))
+    _tint_brain_shell(fig, has_mask=mask is not None)
+    return _style_ui_figure(fig)
+
+
+BRAIN_SHELL_COLOR = "#8FB4F0"   # soft blue brain surface on the white 3D card
+
+
+def _trace_size(trace) -> int:
+    try:
+        x = getattr(trace, "x", None)
+        return len(x) if x is not None else 0
+    except Exception:
+        return 0
+
+
+def _tint_brain_shell(fig: go.Figure, has_mask: bool = True) -> None:
+    """Find the brain surface (the largest trace; tumour meshes are far
+    smaller), tint it soft blue, and record its index in layout.meta so the
+    All / Tumour / Brain toggle knows which traces are which."""
+    traces = list(fig.data)
+    if not traces:
+        return
+    if has_mask and len(traces) > 1:
+        brain_idx = [max(range(len(traces)), key=lambda i: _trace_size(traces[i]))]
+    else:
+        brain_idx = list(range(len(traces)))
+    for i in brain_idx:
+        t = traces[i]
+        try:
+            if t.type == "mesh3d":
+                t.update(color=BRAIN_SHELL_COLOR)
+                if getattr(t, "intensity", None) is not None:
+                    t.update(colorscale=[[0, BRAIN_SHELL_COLOR], [1, BRAIN_SHELL_COLOR]], showscale=False)
+            elif t.type in ("isosurface", "volume", "surface"):
+                t.update(colorscale=[[0, BRAIN_SHELL_COLOR], [1, BRAIN_SHELL_COLOR]], showscale=False)
+        except Exception:
+            pass
+    fig.update_layout(meta={"nv_brain": brain_idx})
+
+
+def _slider_qss(color: str) -> str:
+    """Slice slider whose handle and filled track use a slice-plane colour."""
+    c = QColor(color)
+    tint = f"rgba({c.red()}, {c.green()}, {c.blue()}, 0.45)"
+    return (
+        "QSlider { background: transparent; min-height: 18px; max-height: 18px; }"
+        "QSlider::groove:horizontal { height: 4px; background: #E3ECFA; border-radius: 2px; }"
+        f"QSlider::sub-page:horizontal {{ background: {tint}; border-radius: 2px; }}"
+        f"QSlider::handle:horizontal {{ background: #ffffff; border: 2px solid {color}; "
+        "width: 10px; height: 10px; margin: -5px 0; border-radius: 7px; }"
+        "QSlider::handle:horizontal:disabled { background: #ffffff; border: 2px solid #D5DDEA; }"
+    )
 
 
 class MainWindow(QMainWindow):
@@ -3775,10 +4734,6 @@ class MainWindow(QMainWindow):
         self._committed_mask: Optional[np.ndarray] = None
         self._committed_probs: Optional[np.ndarray] = None
         self._preview_mask: Optional[np.ndarray] = None
-        self._mask_undo_stack: list[np.ndarray] = []
-        self._mask_revision = 0
-        self._mask_refresh_in_progress = False
-        self._pending_mask_refresh = False
         self._sam_refiner = MedSAM2Refiner(MEDSAM2_CHECKPOINT)
         self._model = None
         self._device = None
@@ -3792,281 +4747,448 @@ class MainWindow(QMainWindow):
             self._survival_table = {}
         shell = RootShell()
 
-        # ---------------- Left column: image input + patient record -------
-        left = QVBoxLayout()
-        left.setSpacing(SPACING)
-
-        self.drop_zone = DropVolumeZone()
-        self.drop_zone.folder_chosen.connect(self._load_folder)
-        self.drop_zone.setMinimumHeight(88)
-
-        self.run_seg_btn = QPushButton()
-        self.run_seg_btn.setFixedSize(88, 88)
-        self.run_seg_btn.setIcon(_asset_icon(_RUN_ICON_PATH))
-        self.run_seg_btn.setIconSize(QSize(56, 56))
-        self.run_seg_btn.setToolTip("Run segmentation")
-        self.run_seg_btn.setCursor(Qt.PointingHandCursor)
+        # ---------------- Dynamic Island (header actions) -------------------
+        # Old names (run_seg_btn, clear_btn, busy_bar) are kept so the rest of
+        # the window logic is unchanged.
+        self.island = DynamicIsland()
+        self.run_seg_btn = self.island.run_btn
+        self.clear_btn = self.island.clear_btn
         self.run_seg_btn.setEnabled(False)
-        self.run_seg_btn.setStyleSheet(
-            f"QPushButton {{ border: 1.5px solid {ACCENT_AMBER}; border-radius: 16px; "
-            f"background-color: #2a1c0c; padding: 8px; }}"
-            f"QPushButton:hover {{ background-color: #3a2810; border-color: {ACCENT_AMBER_SOFT}; }}"
-            f"QPushButton:pressed {{ background-color: #c46800; }}"
-            f"QPushButton:disabled {{ background-color: #2c2c2e; border-color: #4a3a22; }}"
-        )
+        self.clear_btn.setEnabled(False)
         self.run_seg_btn.clicked.connect(self.on_run_segmentation)
+        self.clear_btn.clicked.connect(self.on_clear_views)
+        self.island.open_clicked.connect(self._browse_folder)
+        self.island.refine_clicked.connect(self._enter_sam_mode)
+        self.island.sam_plane_chosen.connect(self._choose_sam_plane)
+        self.island.sam_action.connect(self._on_island_sam_action)
+        # Webcam gesture control (off until the island's Gesture button is clicked).
+        self.island.gesture_toggled.connect(self._toggle_gesture)
+        self._gesture = None
+        self._gesture_acc = [0.0, 0.0, 1.0]
+        self._gesture_timer = QTimer(self)
+        self._gesture_timer.setInterval(33)          # ~30 camera updates per second
+        self._gesture_timer.timeout.connect(self._flush_gesture)
+        self._sam_panel = None
+        self.busy_bar = _IslandBusyProxy(self.island)
+        self.setAcceptDrops(True)   # drop a patient folder anywhere on the window
 
-        drop_row = QHBoxLayout()
-        drop_row.setContentsMargins(0, 0, 0, 0)
-        drop_row.setSpacing(8)
-        drop_row.addWidget(self.drop_zone, 1)
-        drop_row.addWidget(self.run_seg_btn, 0, Qt.AlignTop)
-        left.addLayout(drop_row)
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
-
-        self.model_result_label = QLabel("No model run for this patient")
-        self.model_result_label.setWordWrap(True)
-        self.model_result_label.setStyleSheet(
-            f"color: {ACCENT_AMBER_SOFT}; font-size: 9px; border: none;"
-        )
-        left.addWidget(self.model_result_label)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
-
-        self.busy_bar = QProgressBar()
-        self.busy_bar.setRange(0, 0)  # indeterminate — pulses while active
-        self.busy_bar.setTextVisible(False)
-        self.busy_bar.hide()
-        left.addWidget(self.busy_bar)
-
-        self.patients_record_panel = PatientRecordPanel()
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-=======
-        self.summary_panel = self.patients_record_panel.summary
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
-        left.addWidget(self.patients_record_panel, 1)
-
-        self.survival_panel = SurvivalDaysPanel()
-        left.addWidget(self.survival_panel)
-<<<<<<< Updated upstream
-        left.addSpacing(22)
-=======
-<<<<<<< HEAD
-        left.addSpacing(22)
-=======
-        left.addSpacing(10)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
-        left.addWidget(SquadCredit())
-
+        # ---------------- Left column: 2D slices ------------------------------
+        # axis 0 = L-R (sagittal), axis 1 = A-P (coronal), axis 2 = S-I (axial)
+        left = QVBoxLayout()
+        left.setContentsMargins(0, 0, 0, 0)
+        left.setSpacing(SPACING + 4)
+        self.sagittal_panel = SlicePanel("Sagittal", axis=0, min_height=150)
+        self.axial_panel = SlicePanel("Axial", axis=2, min_height=150)
+        self.coronal_panel = SlicePanel("Coronal", axis=1, min_height=150)
+        for slice_panel in (self.sagittal_panel, self.axial_panel, self.coronal_panel):
+            left.addWidget(slice_panel, stretch=1)
         self.left_container = QWidget()
         self.left_container.setLayout(left)
-        self.left_container.setMinimumWidth(200)
-        self.left_container.setMaximumWidth(280)
+        self.left_container.setMinimumWidth(230)
+        self.left_container.setMaximumWidth(LEFT_COL_MAX)
 
-        # ---------------- Center column: 2D views --------------------------
-        # min_height is kept modest (not the visual target size) — it's only
-        # the floor for the smallest supported window. QSizePolicy.Expanding
-        # + the stretch factors below do the actual responsive growing, so
-        # these panels fill available space on a normal-sized window without
-        # ever needing a scrollbar at the small end either.
+        # ---------------- Centre: large 3D brain ------------------------------
         center = QVBoxLayout()
-        center.setSpacing(SPACING)
-        # axis 0 = L-R (sagittal), axis 1 = A-P (coronal), axis 2 = S-I (axial)
-        self.sagittal_panel = SlicePanel("2D sagittal view", axis=0, min_height=140)
-        self.axial_panel = SlicePanel("2D axial view", axis=2, min_height=140)
-        self.coronal_panel = SlicePanel("2D coronal view", axis=1, min_height=140)
-        self._slice_rows = {}
+        center.setContentsMargins(0, 0, 0, 0)
+        self.brain_3d_panel = Panel3D(
+            "3D Brain", min_height=300, accent=ACCENT, backdrop="brain", auto_rotate=True,
+            subtitle="Drag to rotate", view_toggle=True,
+        )
+        center.addWidget(self.brain_3d_panel, 1)
+        # 2D sliders drive the 3D slice planes; each slider handle takes its plane's colour.
         for slice_panel in (self.sagittal_panel, self.axial_panel, self.coronal_panel):
-            row_widget = QWidget()
-            row = QHBoxLayout(row_widget)
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(SPACING)
-            row.addWidget(slice_panel, stretch=1)
-            row.addWidget(slice_panel.sam_card)
-            center.addWidget(row_widget, stretch=1)
-            self._slice_rows[slice_panel] = row_widget
-
+            slice_panel.slider.setStyleSheet(_slider_qss(SLICE_PLANE_COLORS[slice_panel.axis]))
+            slice_panel.slider.valueChanged.connect(
+                lambda value, a=slice_panel.axis: self.brain_3d_panel.set_slice(a, value))
         self.center_container = QWidget()
         self.center_container.setLayout(center)
 
-        # ---------------- Right column: 3D views ---------------------------
+        # ---------------- Right column: tumour, record, report ----------------
         right = QVBoxLayout()
-        right.setSpacing(SPACING)
-<<<<<<< Updated upstream
-        self.tumor_3d_panel = Panel3D("3D tumor", min_height=150, accent=ACCENT_AMBER)
-        self.brain_3d_panel = Panel3D("3D brain view", min_height=200, accent=ACCENT_AMBER)
-=======
-<<<<<<< HEAD
-        self.tumor_3d_panel = Panel3D("3D tumor", min_height=150, accent=ACCENT_AMBER)
-        self.brain_3d_panel = Panel3D("3D brain view", min_height=200, accent=ACCENT_AMBER)
-=======
-        self.tumor_3d_panel = Panel3D("3D tumor", min_height=150, accent=ACCENT_AMBER, backdrop="tumor")
-        self.brain_3d_panel = Panel3D("3D brain view", min_height=200, accent=ACCENT_AMBER, backdrop="brain",
-                                     auto_rotate=True)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
-        # brain view gets more of the extra vertical space than the smaller
-        # tumor-only panel above it, matching the original wireframe's
-        # proportions (small panel on top, tall panel below)
-        right.addWidget(self.tumor_3d_panel, stretch=1)
-        right.addWidget(self.brain_3d_panel, stretch=2)
-
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(SPACING + 4)
+        self.tumor_3d_panel = Panel3D("3D Tumour", min_height=150, accent=ACCENT, backdrop="tumor",
+                                      meta="isolated")
+        self.brain_3d_panel.legend.focus_changed.connect(self.tumor_3d_panel.set_focus)
+        self.patient_info_panel = PatientInfoPanel()
+        self.patients_record_panel = PatientRecordPanel()
+        self.summary_panel = self.patients_record_panel.summary
+        self.survival_panel = SurvivalDaysPanel()
+        self.credit = SquadCredit()
+        right.addWidget(self.tumor_3d_panel, stretch=3)
+        right.addWidget(self.patient_info_panel)
+        right.addWidget(self.patients_record_panel, stretch=4)
+        right.addWidget(self.survival_panel)
+        right.addWidget(self.credit)
         self.right_container = QWidget()
         self.right_container.setLayout(right)
-        self.right_container.setMinimumWidth(240)
+        self.right_container.setMinimumWidth(280)
+        self.right_container.setMaximumWidth(RIGHT_COL_MAX)
 
         # ---------------- Assemble ------------------------------------------
-        # Plain QHBoxLayout with stretch factors — pure responsive design.
-        # Every column has QSizePolicy.Expanding, so the layout grows/shrinks
-        # proportionally with the window on its own; no draggable splitter
-        # and no scroll-area fallback needed, since the minimum heights above
-        # were chosen to always fit within _size_to_screen()'s smallest
-        # supported window size.
-        self.sep_left = _column_separator()
-        self.sep_right = _column_separator()
-
         body = QHBoxLayout()
-        body.setSpacing(10)
-        body.setContentsMargins(SPACING, 10, SPACING, SPACING)
+        body.setSpacing(16)
+        body.setContentsMargins(20, 0, 20, 20)
         body.addWidget(self.left_container, stretch=0)
-        body.addWidget(self.sep_left)
-        body.addWidget(self.center_container, stretch=3)
-        body.addWidget(self.sep_right)
-        body.addWidget(self.right_container, stretch=2)
+        body.addWidget(self.center_container, stretch=1)
+        body.addWidget(self.right_container, stretch=0)
 
         page = QVBoxLayout(shell)
         page.setContentsMargins(0, 0, 0, 0)
         page.setSpacing(0)
-        page.addWidget(AppHeader())
+        self.header = AppHeader(self.island)
+        page.addWidget(self.header)
         page.addLayout(body, stretch=1)
-
         self.setCentralWidget(shell)
 
+        # Webcam bubble beside the island (hidden until Gesture is switched on).
+        self.camera_bubble = CameraBubble(shell)
+        self.gesture_guide = GestureGuideCard(self)   # floating window above the web views
+        self.header.on_island_moved = self._place_camera_bubble
+
+        self._clear_sync_timer = QTimer(self)
+        self._clear_sync_timer.timeout.connect(self._sync_island_buttons)
+        self._clear_sync_timer.start(250)
+
         # ---------------- Maximize / restore wiring --------------------------
-        self.center_panels = [self.sagittal_panel, self.axial_panel, self.coronal_panel]
-        self.right_panels = [self.tumor_3d_panel, self.brain_3d_panel]
+        self.center_panels = [self.sagittal_panel, self.axial_panel, self.coronal_panel]  # the 2D panels
+        self.right_panels = [self.tumor_3d_panel, self.brain_3d_panel]                     # the 3D panels
         self.all_panels = self.center_panels + self.right_panels
+        self._column_members = {
+            self.left_container: list(self.center_panels),
+            self.center_container: [self.brain_3d_panel],
+            self.right_container: [self.tumor_3d_panel, self.patient_info_panel,
+                                   self.patients_record_panel, self.survival_panel, self.credit],
+        }
         self._maximized_panel = None
 
         for panel in self.all_panels:
             panel.maximize_btn.clicked.connect(lambda checked=False, p=panel: self.toggle_maximize(p))
-        for panel in self.right_panels:
-            panel.tumor_selected.connect(self.on_tumor_selected)
         for panel in self.center_panels:
             panel.refinement_requested.connect(self.on_run_sam_refinement)
             panel.accept_requested.connect(self.on_accept_sam_refinement)
             panel.discard_requested.connect(self.on_discard_sam_refinement)
-            panel.mask_edited.connect(self.on_mask_edited)
-            panel.mask_undo_requested.connect(self.on_mask_undo)
 
-    def on_tumor_selected(self, component_id):
-        """Synchronize tumor isolation across both interactive 3D panels."""
-        for panel in self.right_panels:
-            panel.select_tumor(component_id)
+    # ---------------- Webcam gesture control ----------------------------------
+    _GESTURE_LABELS = {
+        "rotate": "\u270b Rotating", "zoom": "\U0001F90F Zooming",
+        "hold": "\u270a Holding", "none": "Show an open palm",
+        "slice": "\u261d Point up / down \u00b7 hold still = next plane", "peace": "\u270c View mode",
+        "thumbs": "\U0001F44D Next view", "three": "Next tumour",
+    }
+    _VIEW_ORDER = ("All", "Tumour", "Brain")
+    _VIEW_MESSAGES = {"All": "View: Brain + tumours", "Tumour": "View: Tumour only", "Brain": "View: Brain only"}
+    _PRESET_ORDER = ("front", "side", "top")
+    _SLICE_ORDER = (2, 1, 0)                     # axial -> coronal -> sagittal
+    _PLANE_NAMES = {0: "Sagittal", 1: "Coronal", 2: "Axial"}
+    RESET_CAMERA_DISTANCE = 2.4      # zoom level the palm-still reset returns to
+
+    def _toggle_gesture(self, on: bool):
+        if not on:
+            self._stop_gesture()
+            return
+        # Always load the gesture_camera.py that sits next to this file, never
+        # an older copy elsewhere on sys.path (the project root comes first).
+        import importlib.util
+        cam_file = Path(__file__).resolve().parent / "gesture_camera.py"
+        try:
+            spec = importlib.util.spec_from_file_location("nv_gesture_camera", cam_file)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            GestureCamera = module.GestureCamera
+            if not hasattr(GestureCamera, "command") or not hasattr(module, "MODEL_URL"):
+                raise ImportError("old version")
+        except (FileNotFoundError, ImportError, AttributeError) as exc:
+            self.island.gesture_btn.setChecked(False)
+            QMessageBox.warning(
+                self, "Gesture control",
+                "Could not load the latest gesture_camera.py.\n\n"
+                f"Expected it here:\n{cam_file}\n\n"
+                "Put the newest gesture_camera.py in that exact folder."
+                + ("" if isinstance(exc, FileNotFoundError) else "\n(The file there is an old version.)"),
+            )
+            return
+        self._gesture = GestureCamera()
+        self._gesture.gesture_delta.connect(self._on_gesture_delta)
+        self._gesture.frame_ready.connect(self.camera_bubble.set_frame)
+        self._gesture.state_changed.connect(
+            lambda s: self.camera_bubble.set_state(self._GESTURE_LABELS.get(s, s)))
+        self._gesture.command.connect(self._on_gesture_command)
+        self._gesture.hold_progress.connect(self.camera_bubble.set_progress)
+        self._gesture.slice_delta.connect(self._on_gesture_slice)
+        self._gesture.failed.connect(self._on_gesture_failed)
+        self._gesture.start()
+        self._gesture_timer.start()
+        self._place_camera_bubble()
+        self.camera_bubble.pop_in()
+        self.brain_3d_panel.set_active_plane(self._gesture_axis())
+        if not getattr(self, "_guide_shown", False):   # first time this run: show the guide
+            self._guide_shown = True
+            self.gesture_guide.pop_in()
+
+    def _gesture_confirm(self, message: str):
+        """Tick in the camera bubble + a short message in the island."""
+        self.camera_bubble.flash_done()
+        if not self._busy and self.island.mode != "sam":
+            self.island.show_done(message, hold_ms=1400)
+
+    def _on_gesture_command(self, name: str):
+        brain, tumour = self.brain_3d_panel, self.tumor_3d_panel
+        if name == "view":
+            cur = brain._view_mode if brain._view_mode in self._VIEW_ORDER else "All"
+            nxt = self._VIEW_ORDER[(self._VIEW_ORDER.index(cur) + 1) % len(self._VIEW_ORDER)]
+            if brain.view_toggle is not None:
+                brain.view_toggle.select(nxt)
+            else:
+                brain.set_view_mode(nxt)
+            self._gesture_confirm(self._VIEW_MESSAGES[nxt])
+        elif name == "preset":
+            self._preset_i = (getattr(self, "_preset_i", -1) + 1) % len(self._PRESET_ORDER)
+            view = self._PRESET_ORDER[self._preset_i]
+            for panel in (brain, tumour):
+                panel.fly_to(view)
+            self._gesture_confirm(f"{view.title()} view")
+        elif name == "focus":
+            rank, n = brain.legend.focus_next() if brain.legend is not None else (0, 0)
+            self._gesture_confirm("No tumours to focus" if n == 0
+                                  else ("Showing all tumours" if rank == 0 else f"Focus: Tumour {rank}"))
+        elif name == "plane":
+            order = self._SLICE_ORDER
+            axis = order[(order.index(self._gesture_axis()) + 1) % len(order)]
+            self._slice_axis = axis
+            self._slice_acc = 0.0
+            brain.set_active_plane(axis)
+            panel = self._panel_for_axis(axis)
+            self.camera_bubble.set_state(
+                f"\u261d {self._PLANE_NAMES[axis]} slice {panel.slider.value()} / {panel.slider.maximum()}")
+            self._gesture_confirm(f"Slicing: {self._PLANE_NAMES[axis]}")
+        elif name == "reset":
+            if brain.view_toggle is not None:
+                brain.view_toggle.select("All")
+            if brain.legend is not None:
+                brain.legend.clear_focus()
+            self._preset_i = 0
+            for panel in (brain, tumour):
+                panel.fly_to("front", self.RESET_CAMERA_DISTANCE)
+            self._gesture_confirm("View reset")
+
+    def _gesture_axis(self) -> int:
+        return getattr(self, "_slice_axis", 2)
+
+    def _panel_for_axis(self, axis: int):
+        return {0: self.sagittal_panel, 1: self.coronal_panel, 2: self.axial_panel}[axis]
+
+    def _on_gesture_slice(self, delta: float):
+        """Pointing finger moves the active slice (and its plane in 3D)."""
+        axis = self._gesture_axis()
+        slider = self._panel_for_axis(axis).slider
+        if not slider.isEnabled():
+            self.camera_bubble.set_state("Load a scan to slice")
+            return
+        self._slice_acc = getattr(self, "_slice_acc", 0.0) + delta
+        step = int(self._slice_acc)
+        if step:
+            self._slice_acc -= step
+            slider.setValue(max(slider.minimum(), min(slider.maximum(), slider.value() + step)))
+        self.camera_bubble.set_state(
+            f"\u261d {self._PLANE_NAMES[axis]} slice {slider.value()} / {slider.maximum()}")
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        if getattr(self, "gesture_guide", None) is not None and self.gesture_guide.isVisible():
+            self._place_camera_bubble()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if getattr(self, "gesture_guide", None) is not None and self.gesture_guide.isVisible():
+            self._place_camera_bubble()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        guide = getattr(self, "gesture_guide", None)
+        if guide is not None and self.isMinimized():
+            guide.pop_out()
+
+    def _place_camera_bubble(self):
+        """Sit the camera bubble just right of the island, top edges aligned."""
+        bubble = getattr(self, "camera_bubble", None)
+        if bubble is None:
+            return
+        island, header = self.island, self.header
+        m = CameraBubble.MARGIN
+        x = header.x() + island.x() + island.width() + 10 - m
+        y = header.y() + island.y() - m
+        x = min(x, self.centralWidget().width() - bubble.width() - 4)
+        bubble.move(x, y)
+        bubble.raise_()
+        guide = getattr(self, "gesture_guide", None)
+        if guide is not None:
+            # Right edge lined up with the bubble's, just below it.
+            gx = x + m + CameraBubble.W - GestureGuideCard.W - GestureGuideCard.MARGIN
+            gx = max(4, min(gx, self.centralWidget().width() - guide.width() - 4))
+            gy = y + m + CameraBubble.H + 8 - GestureGuideCard.MARGIN
+            # The guide is a floating window, so place it in screen coordinates.
+            guide.move(self.centralWidget().mapToGlobal(QPoint(int(gx), int(gy))))
+            guide.raise_()
+
+    def _stop_gesture(self):
+        self._gesture_timer.stop()
+        if self._gesture is not None:
+            self._gesture.stop()
+            self._gesture = None
+        self._gesture_acc = [0.0, 0.0, 1.0]
+        self.camera_bubble.set_progress(0.0)
+        self.camera_bubble.pop_out()
+        self.gesture_guide.pop_out()
+        self.brain_3d_panel.set_active_plane(None)
+
+    def _on_gesture_failed(self, message: str):
+        self.island.gesture_btn.setChecked(False)    # also stops the camera
+        QMessageBox.warning(self, "Gesture control", message)
+
+    def _on_gesture_delta(self, d_az: float, d_el: float, zoom: float):
+        acc = self._gesture_acc
+        acc[0] += d_az
+        acc[1] += d_el
+        acc[2] *= zoom
+
+    def _flush_gesture(self):
+        d_az, d_el, zoom = self._gesture_acc
+        if d_az == 0.0 and d_el == 0.0 and zoom == 1.0:
+            return
+        self._gesture_acc = [0.0, 0.0, 1.0]
+        for panel in (self.brain_3d_panel, self.tumor_3d_panel):   # both 3D views move together
+            panel.send_gesture(d_az, d_el, zoom)
+
+    def closeEvent(self, event):
+        self._stop_gesture()      # release the webcam when the app closes
+        super().closeEvent(event)
+
+    def _sync_island_buttons(self):
+        self.clear_btn.setEnabled(self.current_folder is not None and not self._busy)
+        self.island.open_btn.setEnabled(not self._busy)
+        sam_ready = any(p._sam_enabled for p in self.center_panels)
+        self.island.refine_btn.setEnabled(sam_ready and not self._busy)
+        if self.island.mode != "sam":
+            return
+        p = self._sam_panel
+        if p is None or not p._sam_enabled:
+            self._exit_sam_mode()
+            return
+        count = len(p._sam_points) + int(p._sam_box is not None)
+        if p._sam_preview_available:
+            hint = "Preview ready"
+        elif count:
+            hint = f"{count} prompt{'s' if count != 1 else ''}"
+        else:
+            hint = "Click or drag on the slice"
+        self.island.update_sam(hint, {
+            "undo": p.sam_undo_btn.isEnabled(),
+            "clear": p.sam_clear_btn.isEnabled(),
+            "preview": p.sam_run_btn.isEnabled(),
+            "accept": p.sam_accept_btn.isEnabled(),
+            "discard": p.sam_discard_btn.isEnabled(),
+            "done": not p._sam_preview_available and not self._busy,
+        }, p._sam_preview_available)
+
+    # ---------------- MedSAM2 via the island -----------------------------------
+    def _panel_for_plane(self, plane: str):
+        return {"Sagittal": self.sagittal_panel, "Axial": self.axial_panel,
+                "Coronal": self.coronal_panel}.get(plane, self.axial_panel)
+
+    def _enter_sam_mode(self):
+        if self._busy or not any(p._sam_enabled for p in self.center_panels):
+            return
+        self._choose_sam_plane("Axial", enter=True)
+
+    def _choose_sam_plane(self, plane: str, enter: bool = False):
+        panel = self._panel_for_plane(plane)
+        current = self._sam_panel
+        if current is not None and current is not panel and current._sam_preview_available:
+            self.island.set_sam_plane([k for k in ("Sagittal", "Axial", "Coronal")
+                                       if self._panel_for_plane(k) is current][0])
+            return
+        for p in self.center_panels:
+            if p is not panel and p.sam_refine_btn.isChecked():
+                p.sam_refine_btn.setChecked(False)
+        if not panel.sam_refine_btn.isChecked():
+            panel.sam_refine_btn.setChecked(True)
+        self._sam_panel = panel
+        if enter:
+            self.island.enter_sam(plane)
+        else:
+            self.island.set_sam_plane(plane)
+        self._sync_island_buttons()
+
+    def _exit_sam_mode(self):
+        for p in self.center_panels:
+            if p.sam_refine_btn.isChecked():
+                p.sam_refine_btn.setChecked(False)
+        self._sam_panel = None
+        self.island.exit_sam()
+
+    def _on_island_sam_action(self, key: str):
+        if key == "done":
+            self._exit_sam_mode()
+            return
+        p = self._sam_panel
+        if p is None:
+            return
+        btn = {"undo": p.sam_undo_btn, "clear": p.sam_clear_btn, "preview": p.sam_run_btn,
+               "accept": p.sam_accept_btn, "discard": p.sam_discard_btn}.get(key)
+        if btn is not None and btn.isEnabled():
+            btn.click()
+        self._sync_island_buttons()
+
+    # ---------------- Drag a patient folder onto the window --------------------
+    def dragEnterEvent(self, event):
+        if not self._busy and DropVolumeZone._path_from_mime(event) is not None:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        folder = DropVolumeZone._path_from_mime(event)
+        if folder is None or self._busy:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self._load_folder(folder)
+
+    def _browse_folder(self):
+        if self._busy:
+            return
+        folder = QFileDialog.getExistingDirectory(self, "Select patient folder", _default_browse_dir())
+        if folder:
+            self._load_folder(Path(folder))
 
     def toggle_maximize(self, panel):
-        """Clicking a panel's maximize button hides every other panel (and
-        the now-empty side column) so it fills the available space; clicking
-        it again restores the normal 3-column grid. A plain QHBoxLayout
-        already collapses a hidden widget's space to its neighbors, so no
-        manual width juggling is needed here."""
+        """Maximize one panel to fill the window body; click again to restore."""
+        home = next(c for c, members in self._column_members.items() if panel in members)
+        # Restore everything first.
+        for container, members in self._column_members.items():
+            container.show()
+            for w in members:
+                w.show()
+        self.left_container.setMaximumWidth(LEFT_COL_MAX)
+        self.right_container.setMaximumWidth(RIGHT_COL_MAX)
+
         if self._maximized_panel is panel:
-            # restore
-            self.left_container.show()
-            self.center_container.show()
-            self.right_container.show()
-            self.sep_left.show()
-            self.sep_right.show()
-            for p in self.all_panels:
-                p.show()
-            for row_widget in self._slice_rows.values():
-                row_widget.show()
             panel.set_maximized(False)
             self._maximized_panel = None
-            if isinstance(panel, SlicePanel):
-                QTimer.singleShot(0, panel.refresh_after_layout_change)
-            return
-
-        if self._maximized_panel is not None:
-            self._maximized_panel.set_maximized(False)
-
-        self.left_container.hide()
-        self.sep_left.hide()
-        self.sep_right.hide()
-        if panel in self.center_panels:
-            self.right_container.hide()
-            self.center_container.show()
-            for p in self.center_panels:
-                p.setVisible(p is panel)
-                self._slice_rows[p].setVisible(p is panel)
         else:
-            self.center_container.hide()
-            self.right_container.show()
-            for p in self.right_panels:
-                p.setVisible(p is panel)
-
-        panel.set_maximized(True)
-        self._maximized_panel = panel
-        if isinstance(panel, SlicePanel):
-            QTimer.singleShot(0, panel.refresh_after_layout_change)
-
-    def _start_background(self, fn, on_ok, on_err) -> bool:
-        if self._busy or (self._worker_thread is not None and self._worker_thread.isRunning()):
-            return False
-        self._busy = True
-        worker = _BackgroundJob(fn)
-        thread = QThread()
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.ok.connect(on_ok)
-        worker.err.connect(on_err)
-        worker.ok.connect(thread.quit)
-        worker.err.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._on_worker_finished)
-        self._worker = worker
-        self._worker_thread = thread
-        thread.start()
-        return True
-
-    def _on_worker_finished(self):
-        self._worker = None
-        self._worker_thread = None
-        if self._pending_mask_refresh and self._committed_mask is not None:
-            self._pending_mask_refresh = False
-            QTimer.singleShot(0, lambda: self._start_mask_refresh(self._committed_mask))
-
-    def _start_background(self, fn, on_ok, on_err) -> bool:
-        if self._busy or (self._worker_thread is not None and self._worker_thread.isRunning()):
-            return False
-        self._busy = True
-        worker = _BackgroundJob(fn)
-        thread = QThread()
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.ok.connect(on_ok)
-        worker.err.connect(on_err)
-        worker.ok.connect(thread.quit)
-        worker.err.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._on_worker_finished)
-        self._worker = worker
-        self._worker_thread = thread
-        thread.start()
-        return True
-
-    def _on_worker_finished(self):
-        self._worker = None
-        self._worker_thread = None
+            if self._maximized_panel is not None:
+                self._maximized_panel.set_maximized(False)
+            for container, members in self._column_members.items():
+                container.setVisible(container is home)
+            for w in self._column_members[home]:
+                w.setVisible(w is panel)
+            home.setMaximumWidth(QT_MAX)
+            panel.set_maximized(True)
+            self._maximized_panel = panel
+        for p in self.center_panels:
+            if p.isVisible():
+                QTimer.singleShot(0, p.refresh_after_layout_change)
 
     def _start_background(self, fn, on_ok, on_err) -> bool:
         if self._busy or (self._worker_thread is not None and self._worker_thread.isRunning()):
@@ -4098,55 +5220,19 @@ class MainWindow(QMainWindow):
 
         folder_path = self.current_folder
         survival_stats = self._survival_stats
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
 
-=======
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
-        self.busy_bar.show()
+        self.busy_bar.show("Running segmentation")
         self.run_seg_btn.setEnabled(False)
         self._set_2d_loading(True)
 
         def job():
             modality_paths = MainWindow._find_modality_files(folder_path)
-<<<<<<< Updated upstream
-            display_volume, model_input, affine = MainWindow._load_and_stack(modality_paths)
-=======
-<<<<<<< HEAD
-            display_volume, model_input, affine = MainWindow._load_and_stack(modality_paths)
-=======
             display_volume, model_input, affine, transform, axcodes = MainWindow._load_and_stack(modality_paths)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
             model, device = _ensure_model()
             mask, probs, predicted_days = MainWindow._run_model_static(
                 model, device, model_input, display_volume.shape, survival_stats
             )
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-            volume_3d, mask_3d, spacing = _prepare_3d(display_volume, mask, affine)
-            has_tumor = mask_3d is not None and float(np.asarray(mask_3d).sum()) > 0
-            tumor_fig = build_tumor_figure(mask_3d, spacing) if has_tumor else None
-            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing)
-            return {
-                "display_volume": display_volume,
-                "affine": affine,
-                "mask": mask,
-                "probs": probs,
-<<<<<<< Updated upstream
-=======
-=======
-            voxel_vol_cm3 = MainWindow._voxel_volume_cm3(affine)
-            mask = MainWindow._filter_predicted_components(mask, voxel_vol_cm3)
-            labels, components, color_map = self._label_tumor_components(mask, probs, voxel_vol_cm3)
-            volume_3d, mask_3d, labels_3d, spacing = _prepare_3d(display_volume, mask, affine, labels)
-            has_tumor = mask_3d is not None and float(np.asarray(mask_3d).sum()) > 0
-            tumor_fig = build_tumor_figure(mask_3d, spacing, labels_3d, color_map) if has_tumor else None
-            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing, labels_3d, color_map)
+            tumor_fig, brain_fig = build_3d_figures(display_volume, mask, probs, affine, axcodes)
             return {
                 "display_volume": display_volume,
                 "affine": affine,
@@ -4154,11 +5240,6 @@ class MainWindow(QMainWindow):
                 "axcodes": axcodes,
                 "mask": mask,
                 "probs": probs,
-                "labels": labels,
-                "components": components,
-                "color_map": color_map,
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
                 "predicted_days": predicted_days,
                 "tumor_fig": tumor_fig,
                 "brain_fig": brain_fig,
@@ -4177,112 +5258,31 @@ class MainWindow(QMainWindow):
         self.coronal_panel.set_volume(display_volume)
 
         voxel_vol_cm3 = self._voxel_volume_cm3(affine)
-<<<<<<< Updated upstream
-        labels, _components, color_map = self._label_tumor_components(mask, probs, voxel_vol_cm3)
-=======
-<<<<<<< HEAD
-        labels, _components, color_map = self._label_tumor_components(mask, probs, voxel_vol_cm3)
-=======
-        labels = result["labels"]
-        components = result["components"]
-        color_map = result["color_map"]
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
+        labels, components, color_map = self._label_tumor_components(mask, probs, voxel_vol_cm3)
         self.sagittal_panel.set_detection(probs, labels, color_map)
         self.axial_panel.set_detection(probs, labels, color_map)
         self.coronal_panel.set_detection(probs, labels, color_map)
         self._set_2d_loading(False)
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-        self.patients_record_panel.set_volume(float(mask.sum()) * voxel_vol_cm3)
-        self.survival_panel.set_days(result["predicted_days"])
-        self._display_volume = display_volume
-        self._display_affine = affine
-<<<<<<< Updated upstream
-=======
-=======
         self._axcodes = result.get("axcodes")
         self._update_report(mask, labels, components, voxel_vol_cm3, display_volume)
         self.survival_panel.set_days(result["predicted_days"])
-        self.model_result_label.setText("Showing Zaq result")
         self._display_volume = display_volume
         self._display_affine = affine
         self._volume_transform = result["transform"]
         self._committed_mask = mask.copy()
         self._committed_probs = probs.copy()
         self._preview_mask = None
-        self._mask_undo_stack.clear()
-        self._set_mask_undo_available()
         self._set_sam_available(True)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
 
         self.busy_bar.hide()
+        n_found = len(components)
+        self.island.show_done(
+            f"Segmentation complete \u00b7 {n_found} tumour{'s' if n_found != 1 else ''} found"
+            if n_found else "Segmentation complete \u00b7 no tumour found"
+        )
         self.run_seg_btn.setEnabled(True)
         self._busy = False
-<<<<<<< Updated upstream
-
-        # 2D results stay on this window. Load 3D on the next tick into the
-        # already-created web views so Qt does not remount the right column
-        # (that remount was flashing as if the window closed and reopened).
-        self._pending_3d = (result.get("tumor_fig"), result.get("brain_fig"))
-        QTimer.singleShot(0, self._apply_pending_3d)
-
-    def _apply_pending_3d(self):
-        pending = getattr(self, "_pending_3d", None)
-        self._pending_3d = None
-        if not pending:
-            return
-        tumor_fig, brain_fig = pending
-        try:
-            if tumor_fig is not None:
-                self.tumor_3d_panel.set_figure(tumor_fig)
-            if brain_fig is not None:
-                self.brain_3d_panel.set_figure(brain_fig)
-        except Exception as exc:
-            QMessageBox.warning(self, "3D render failed", str(exc))
-
-    def _on_segmentation_failed(self, message: str):
-        self.busy_bar.hide()
-        self._set_2d_loading(False)
-        self.run_seg_btn.setEnabled(self.current_folder is not None)
-        self._busy = False
-        QMessageBox.critical(self, "Inference failed", message)
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-
-        # 2D results stay on this window. Load 3D on the next tick into the
-        # already-created web views so Qt does not remount the right column
-        # (that remount was flashing as if the window closed and reopened).
-        self._pending_3d = (result.get("tumor_fig"), result.get("brain_fig"))
-        QTimer.singleShot(0, self._apply_pending_3d)
-
-    def _apply_pending_3d(self):
-        pending = getattr(self, "_pending_3d", None)
-        self._pending_3d = None
-        if not pending:
-            return
-        tumor_fig, brain_fig = pending
-        try:
-            if tumor_fig is not None:
-                self.tumor_3d_panel.set_figure(tumor_fig)
-            if brain_fig is not None:
-                self.brain_3d_panel.set_figure(brain_fig)
-        except Exception as exc:
-            QMessageBox.warning(self, "3D render failed", str(exc))
-
-    def _on_segmentation_failed(self, message: str):
-        self.busy_bar.hide()
-        self._set_2d_loading(False)
-        self.run_seg_btn.setEnabled(self.current_folder is not None)
-        self._busy = False
-        QMessageBox.critical(self, "Inference failed", message)
-=======
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
 
         # 2D results stay on this window. Load 3D on the next tick into the
         # already-created web views so Qt does not remount the right column
@@ -4327,45 +5327,7 @@ class MainWindow(QMainWindow):
             color_map:  {label_id: hex_color}, for passing straight into
                         SlicePanel.set_detection()
         """
-        labels, n_components = ndi_label(mask > 0.5)
-
-        entries = []
-        for label_id in range(1, n_components + 1):
-            comp_mask = labels == label_id
-            voxels = int(comp_mask.sum())
-            if voxels == 0:
-                continue
-            entries.append({
-                "label_id": label_id,
-                "voxels": voxels,
-                "volume_cm3": voxels * voxel_vol_cm3,
-                "confidence": float(probs[comp_mask].mean()) if probs is not None else None,
-            })
-
-        # Largest first, so "#1" consistently means the biggest lesion
-        # rather than an arbitrary scan-order label id.
-        entries.sort(key=lambda e: e["volume_cm3"], reverse=True)
-
-        color_map = {}
-        for rank, entry in enumerate(entries):
-            color_name, color_hex = COMPONENT_PALETTE[rank % len(COMPONENT_PALETTE)]
-            entry["rank"] = rank + 1
-            entry["color_name"] = color_name
-            entry["color_hex"] = color_hex
-            color_map[entry["label_id"]] = color_hex
-
-        return labels, entries, color_map
-
-    @staticmethod
-    def _filter_predicted_components(mask: np.ndarray, voxel_vol_cm3: float) -> np.ndarray:
-        """Remove sub-clinical disconnected prediction specks before reporting."""
-        labels, n_components = ndi_label(mask > 0.5)
-        cleaned = np.asarray(mask, dtype=np.float32).copy()
-        for label_id in range(1, n_components + 1):
-            region = labels == label_id
-            if float(region.sum()) * voxel_vol_cm3 < MIN_PREDICTED_COMPONENT_CM3:
-                cleaned[region] = 0.0
-        return cleaned
+        return _component_table(mask, probs, voxel_vol_cm3)
 
     def _set_2d_loading(self, active: bool):
         """Shows/hides the spinner overlay on all three 2D panels at once."""
@@ -4375,9 +5337,11 @@ class MainWindow(QMainWindow):
     def _set_sam_available(self, available: bool):
         for panel in self.center_panels:
             panel.enable_sam(available)
+        if not available:
+            self._exit_sam_mode()
 
     def _set_sam_busy(self, busy: bool):
-        self.drop_zone.setEnabled(not busy)
+        self.island.open_btn.setEnabled(not busy)
         self.run_seg_btn.setEnabled(not busy and self.current_folder is not None)
         for panel in self.center_panels:
             panel.set_sam_busy(busy)
@@ -4386,20 +5350,19 @@ class MainWindow(QMainWindow):
         for panel in self.center_panels:
             panel.set_sam_preview_available(available)
 
-    def _set_mask_undo_available(self):
-        available = bool(self._mask_undo_stack)
-        for panel in self.center_panels:
-            panel.set_mask_undo_available(available)
-
     def _reset_report(self):
         self.patients_record_panel.reset()
         self.summary_panel.reset()
+        self.brain_3d_panel.set_legend([])
 
     def _update_report(self, mask: np.ndarray, labels: np.ndarray, components: list,
                        voxel_vol_cm3: float, volume: Optional[np.ndarray]):
         """Refresh the per-tumor Report card and the Report summary together."""
         total_cm3 = float(mask.sum()) * voxel_vol_cm3
         self.patients_record_panel.set_tumors(components, total_cm3)
+        self.brain_3d_panel.set_legend(
+            [(f"Tumour {c['rank']}", c["color_hex"]) for c in components[:REPORT_MAX_TUMOR_ROWS]]
+        )
 
         percent = None
         location = None
@@ -4448,175 +5411,13 @@ class MainWindow(QMainWindow):
         else:
             self._show_binary_mask(self._committed_mask)
 
-    def on_mask_edited(self, stroke: dict):
-        """Apply one 2D eraser stroke to the shared 3D tumor mask."""
-        if self._committed_mask is None or self._busy:
-            return
-
-        # Edit the authoritative mask in place while dragging. Copying and
-        # relabeling the whole 3D volume for every mouse event makes an eraser
-        # feel delayed on clinical-size scans.
-        mask = self._committed_mask
-        if stroke.get("start", False):
-            # Boolean snapshots use one byte per voxel instead of retaining
-            # the model's larger floating-point mask representation.
-            self._mask_undo_stack.append(mask > 0.5)
-            if len(self._mask_undo_stack) > 10:
-                del self._mask_undo_stack[0]
-            self._set_mask_undo_available()
-        plane = stroke["plane"]
-        index = int(stroke["slice_index"])
-        radius = max(1, int(stroke["radius"]))
-        final = bool(stroke.get("final", False))
-
-        if plane == "sagittal":
-            view = mask[index, :, :]
-        elif plane == "coronal":
-            view = mask[:, index, :]
-        else:
-            view = mask[:, :, index]
-
-        rows, cols = view.shape
-        yy, xx = np.ogrid[:rows, :cols]
-        points = stroke.get("points", [])
-        # Interpolate between sampled mouse positions so fast drags make a
-        # continuous stroke rather than a row of disconnected circles.
-        dense_points = []
-        for point_index, (x, y) in enumerate(points):
-            if point_index == 0:
-                dense_points.append((x, y))
-                continue
-            px, py = points[point_index - 1]
-            steps = max(abs(x - px), abs(y - py), 1)
-            dense_points.extend(
-                (int(round(px + (x - px) * step / steps)),
-                 int(round(py + (y - py) * step / steps)))
-                for step in range(1, steps + 1)
-            )
-        for x, y in dense_points:
-            if 0 <= x < cols and 0 <= y < rows:
-                disk = (xx - x) ** 2 + (yy - y) ** 2 <= radius ** 2
-                view[disk] = 0.0
-
-        self._committed_probs = None
-        self._preview_mask = None
-        self._set_sam_preview_available(False)
-        if final:
-            # Synchronize 2D immediately and build expensive 3D surfaces on
-            # the worker thread, using the same fast path as Undo.
-            self._start_mask_refresh(mask)
-        else:
-            active_panel = next(
-                (panel for panel in self.center_panels if panel.plane == plane), None
-            )
-            if active_panel is not None:
-                active_panel.set_mask(mask)
-
-    def on_mask_undo(self):
-        """Restore the mask as it was before the most recent eraser stroke."""
-        if not self._mask_undo_stack or self._display_volume is None:
-            return
-        self._committed_mask = self._mask_undo_stack.pop().astype(np.float32)
-        self._committed_probs = None
-        self._preview_mask = None
-        self._set_sam_preview_available(False)
-        self._start_mask_refresh(self._committed_mask)
-
-    def _start_mask_refresh(self, corrected_mask: np.ndarray):
-        """Show a corrected mask now and refresh component/3D data off-thread."""
-        if self._display_volume is None or self._display_affine is None:
-            return
-
-        # Give immediate feedback first. Connected-component analysis and 3D
-        # surface extraction are deliberately moved to the worker below.
-        self._mask_revision += 1
-        revision = self._mask_revision
-        mask = corrected_mask.copy()
-        volume = self._display_volume.copy()
-        affine = self._display_affine.copy()
-        for panel in self.center_panels:
-            panel.set_mask(self._committed_mask)
-            panel.enable_mask_editing(False)
-        voxel_vol_cm3 = self._voxel_volume_cm3(affine)
-        self.busy_bar.show()
-
-        # A prior surface build cannot be cancelled safely. Keep the newly
-        # restored 2D mask visible now and queue its 3D refresh; the old result
-        # is rejected by its revision number below.
-        if self._mask_refresh_in_progress:
-            self._pending_mask_refresh = True
-            self._set_mask_undo_available()
-            return
-
-        def job():
-            labels, components, color_map = self._label_tumor_components(
-                mask, None, voxel_vol_cm3
-            )
-            volume_3d, mask_3d, labels_3d, spacing = _prepare_3d(volume, mask, affine, labels)
-            has_tumor = bool(np.any(mask_3d))
-            tumor_fig = build_tumor_figure(mask_3d, spacing, labels_3d, color_map) if has_tumor else None
-            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing, labels_3d, color_map)
-            return {
-                "mask": mask,
-                "labels": labels,
-                "components": components,
-                "color_map": color_map,
-                "tumor_fig": tumor_fig,
-                "brain_fig": brain_fig,
-                "revision": revision,
-            }
-
-        started = self._start_background(
-            job, self._on_mask_refresh_ready, self._on_mask_refresh_failed
-        )
-        self._mask_refresh_in_progress = started
-        if not started:
-            self.busy_bar.hide()
-            for panel in self.center_panels:
-                panel.enable_mask_editing(True)
-        self._set_mask_undo_available()
-
-    def _on_mask_refresh_ready(self, result: dict):
-        """Finish a deferred component and 3D refresh after an edit."""
-        if result["revision"] == self._mask_revision:
-            for panel in self.center_panels:
-                panel.set_refined_detection(
-                    result["mask"], result["labels"], result["color_map"]
-                )
-                panel.enable_mask_editing(True)
-            self._update_report(
-                result["mask"], result["labels"], result["components"],
-                self._voxel_volume_cm3(self._display_affine), self._display_volume,
-            )
-            if result["tumor_fig"] is None:
-                self.tumor_3d_panel.clear_figure()
-            else:
-                self.tumor_3d_panel.set_figure(result["tumor_fig"])
-            self.brain_3d_panel.set_figure(result["brain_fig"])
-        self.busy_bar.hide()
-        self._busy = False
-        self._mask_refresh_in_progress = False
-        self._set_mask_undo_available()
-
-    def _on_mask_refresh_failed(self, message: str):
-        # The restored 2D mask remains valid even if optional 3D rendering
-        # fails, so keep it and simply re-enable editing.
-        self.busy_bar.hide()
-        self._busy = False
-        self._mask_refresh_in_progress = False
-        if self._committed_mask is not None:
-            self._show_binary_mask(self._committed_mask)
-        for panel in self.center_panels:
-            panel.enable_mask_editing(True)
-        self._set_mask_undo_available()
-        QMessageBox.warning(self, "3D mask refresh failed", message)
-
     def on_run_sam_refinement(self, prompt: dict):
         if self._busy or self._display_volume is None:
             return
         volume = self._display_volume.copy()
         seed = self._committed_mask.copy() if self._committed_mask is not None else None
-        self.busy_bar.show()
+        axcodes = self._axcodes
+        self.busy_bar.show("MedSAM2 refining")
         self._set_sam_busy(True)
         self._set_2d_loading(True)
 
@@ -4630,11 +5431,7 @@ class MainWindow(QMainWindow):
                 points=prompt["points"],
                 point_labels=prompt["point_labels"],
             )
-            voxel_vol_cm3 = self._voxel_volume_cm3(self._display_affine)
-            labels, _components, color_map = self._label_tumor_components(mask, None, voxel_vol_cm3)
-            volume_3d, mask_3d, labels_3d, spacing = _prepare_3d(volume, mask, self._display_affine, labels)
-            tumor_fig = build_tumor_figure(mask_3d, spacing, labels_3d, color_map) if np.any(mask_3d) else None
-            brain_fig = build_brain_figure(volume_3d, mask_3d, spacing, labels_3d, color_map)
+            tumor_fig, brain_fig = build_3d_figures(volume, mask, None, self._display_affine, axcodes)
             return {"mask": mask, "tumor_fig": tumor_fig, "brain_fig": brain_fig}
 
         self._start_background(job, self._on_sam_refinement_ready, self._on_sam_refinement_failed)
@@ -4669,8 +5466,6 @@ class MainWindow(QMainWindow):
         self._committed_mask = self._preview_mask.copy()
         self._committed_probs = None
         self._preview_mask = None
-        self._mask_undo_stack.clear()
-        self._set_mask_undo_available()
         self._set_sam_preview_available(False)
         for panel in self.center_panels:
             panel.clear_sam_prompts()
@@ -4696,17 +5491,16 @@ class MainWindow(QMainWindow):
         Build the two 3D Plotly figures via `show_volume_3d` and load them
         into the right-column panels. A None/empty mask still draws the brain.
         """
-        voxel_vol_cm3 = self._voxel_volume_cm3(affine)
-        labels, _components, color_map = self._label_tumor_components(mask, None, voxel_vol_cm3) if mask is not None else (None, [], {})
-        volume_3d, mask_3d, labels_3d, spacing = _prepare_3d(display_volume, mask, affine, labels)
-
+        probs = self._committed_probs
+        if probs is None or mask is None or probs.shape != mask.shape or mask is not self._committed_mask:
+            probs = None
         try:
-            has_tumor = mask_3d is not None and float(np.asarray(mask_3d).sum()) > 0
-            if has_tumor:
-                self.tumor_3d_panel.set_figure(build_tumor_figure(mask_3d, spacing, labels_3d, color_map))
+            tumor_fig, brain_fig = build_3d_figures(display_volume, mask, probs, affine, self._axcodes)
+            if tumor_fig is not None:
+                self.tumor_3d_panel.set_figure(tumor_fig)
             else:
                 self.tumor_3d_panel.clear_figure()
-            self.brain_3d_panel.set_figure(build_brain_figure(volume_3d, mask_3d, spacing, labels_3d, color_map))
+            self.brain_3d_panel.set_figure(brain_fig)
         except Exception as exc:
             QMessageBox.warning(self, "3D render failed", str(exc))
 
@@ -4780,42 +5574,6 @@ class MainWindow(QMainWindow):
                     f"(all 4 modalities must be co-registered to the same grid)"
                 )
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-        # Pad every modality with the same centered cube-pad, then resize
-        # to the square display grid. The model is run at INFERENCE_SIZE
-        # and the mask is mapped back to this same grid.
-        pads = _cube_pads(arrays["t2f"].shape)
-        for key in MODALITIES:
-            arrays[key] = _apply_pads(arrays[key], pads)
-
-        flair = arrays["t2f"]
-        d_min, d_max = float(flair.min()), float(flair.max())
-        display_volume = (flair - d_min) / (d_max - d_min) if d_max > d_min else flair
-        display_volume = _resize_exact(display_volume, STANDARD_DISPLAY_SHAPE, order=1)
-
-        padded_shape = np.array(arrays["t2f"].shape, dtype=np.float64)
-        native_spacing = np.sqrt((affine[:3, :3] ** 2).sum(axis=0))
-        new_spacing = native_spacing * (padded_shape / np.array(STANDARD_DISPLAY_SHAPE, dtype=np.float64))
-        affine = np.eye(4)
-        affine[0, 0] = new_spacing[0]
-        affine[1, 1] = new_spacing[1]
-        affine[2, 2] = new_spacing[2]
-<<<<<<< Updated upstream
-
-        channels = [
-            _resize_exact(_normalize(arrays[key]), STANDARD_DISPLAY_SHAPE, order=1)
-            for key in MODALITIES
-        ]
-=======
-
-        channels = [
-            _resize_exact(_normalize(arrays[key]), STANDARD_DISPLAY_SHAPE, order=1)
-            for key in MODALITIES
-        ]
-=======
         # Keep preprocessing identical to training: normalize each native
         # modality and let _run_model_static resize once to TARGET_SHAPE.
         flair = arrays["t2f"]
@@ -4824,8 +5582,6 @@ class MainWindow(QMainWindow):
         display_volume, affine = _standardize_volume(display_volume, affine)
 
         channels = [_normalize(arrays[key]) for key in MODALITIES]
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         stacked = np.stack(channels, axis=0)  # [4, D, H, W]
         tensor = torch.from_numpy(stacked).unsqueeze(0).float()  # [1, 4, D, H, W]
         transform = VolumeTransform.from_image(flair_image, STANDARD_DISPLAY_SHAPE)
@@ -4840,23 +5596,14 @@ class MainWindow(QMainWindow):
         return model
 
     @staticmethod
-<<<<<<< Updated upstream
     def _run_model_static(model, device, model_input: torch.Tensor, target_shape: tuple, survival_stats):
-=======
-<<<<<<< HEAD
-    def _run_model_static(model, device, model_input: torch.Tensor, target_shape: tuple, survival_stats):
-=======
-    def _run_model_static(model, device, model_input: torch.Tensor, target_shape: tuple,
-                          survival_stats):
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         x = model_input.to(device)
         resized = torch.nn.functional.interpolate(
             x, size=INFERENCE_SIZE, mode="trilinear", align_corners=False
         )
         with torch.no_grad():
             outputs = run_model(model, resized)
-            logits, survival_output = split_model_outputs(outputs)
+            logits, _ = split_model_outputs(outputs)
             probs = torch.sigmoid(logits)
         probs_native = torch.nn.functional.interpolate(
             probs, size=target_shape, mode="trilinear", align_corners=False
@@ -4885,6 +5632,34 @@ class MainWindow(QMainWindow):
         voxel_volume_mm3 = float(np.prod(voxel_dims_mm))
         return voxel_volume_mm3 / 1000.0
 
+    def on_clear_views(self):
+        """Unload the case: empty 2D and 3D views, report, survival and MedSAM2."""
+        if self._busy:
+            return
+        self.current_folder = None
+        self._nii_files = []
+        self._display_volume = None
+        self._display_affine = None
+        self._volume_transform = None
+        self._axcodes = None
+        self._committed_mask = None
+        self._committed_probs = None
+        self._preview_mask = None
+        self._pending_3d = None
+        for panel in self.center_panels:
+            panel.clear_volume()
+        for panel3d in (self.tumor_3d_panel, self.brain_3d_panel):
+            panel3d.set_empty_message(Panel3D.MSG_NO_CASE)
+            panel3d.clear_figure()
+        self._reset_report()
+        self.survival_panel.set_days(None)
+        self._set_sam_preview_available(False)
+        self._set_sam_available(False)
+        self.patient_info_panel.reset()
+        self.island.set_case(None)
+        self.run_seg_btn.setEnabled(False)
+        self.clear_btn.setEnabled(False)
+
     def _load_folder(self, folder_path: Path) -> bool:
         """
         Loads a patient folder and previews FLAIR (or the first NIfTI).
@@ -4904,33 +5679,27 @@ class MainWindow(QMainWindow):
         self.current_folder = folder_path
         self._nii_files = nii_files
         case_id = folder_path.name
-        self.drop_zone.set_case(case_id)
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
-        self.patients_record_panel.set_case(
-            case_id, self._survival_table.get(case_id)
-        )
-        self.survival_panel.set_days(None)
-<<<<<<< Updated upstream
-=======
-=======
-        self.model_result_label.setText("No model run for this patient")
+        try:
+            header_img = nib.load(str(nii_files[0]))
+            native_shape = tuple(int(v) for v in header_img.shape[:3])
+            native_zooms = tuple(float(z) for z in header_img.header.get_zooms()[:3])
+        except Exception:
+            native_shape, native_zooms = None, None
+        self.patient_info_panel.set_case(case_id, nii_files, native_shape, native_zooms)
+        self.island.set_case(case_id)
+        self.busy_bar.show("Loading scan")
+        for panel3d in (self.tumor_3d_panel, self.brain_3d_panel):
+            panel3d.set_empty_message(Panel3D.MSG_READY)
+            panel3d.clear_figure()   # drop the previous patient's 3D view
         self._reset_report()
-        self.patients_record_panel.set_case(case_id, self._survival_table.get(case_id))
         self._axcodes = None
         self.survival_panel.set_days(None)
         self._committed_mask = None
         self._committed_probs = None
         self._preview_mask = None
-        self._mask_undo_stack.clear()
-        self._set_mask_undo_available()
         self._volume_transform = None
         self._set_sam_available(False)
         self._set_sam_preview_available(False)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         self.run_seg_btn.setEnabled(False)
 
         default_index = 0
@@ -4947,44 +5716,29 @@ class MainWindow(QMainWindow):
 
         started = self._start_background(job, self._on_preview_ready, self._on_preview_failed)
         if not started:
+            self.busy_bar.hide()
             self._set_2d_loading(False)
             self.run_seg_btn.setEnabled(True)
             return False
         return True
 
     def _on_preview_ready(self, result):
-<<<<<<< Updated upstream
-        volume, affine = result
-=======
-<<<<<<< HEAD
-        volume, affine = result
-=======
         volume, affine, transform, axcodes = result
         self._axcodes = axcodes
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         self.sagittal_panel.set_volume(volume)
         self.axial_panel.set_volume(volume)
         self.coronal_panel.set_volume(volume)
         self._display_volume = volume
         self._display_affine = affine
-<<<<<<< Updated upstream
-        self._set_2d_loading(False)
-        self.run_seg_btn.setEnabled(True)
-=======
-<<<<<<< HEAD
-        self._set_2d_loading(False)
-        self.run_seg_btn.setEnabled(True)
-=======
         self._volume_transform = transform
         self._set_2d_loading(False)
+        self.busy_bar.hide()
         self.run_seg_btn.setEnabled(True)
         self._set_sam_available(True)
->>>>>>> aece7da2b4a8c7b8209a76c8cda032db1b4d104a
->>>>>>> Stashed changes
         self._busy = False
 
     def _on_preview_failed(self, message: str):
+        self.busy_bar.hide()
         self._set_2d_loading(False)
         self.run_seg_btn.setEnabled(self.current_folder is not None)
         self._busy = False
@@ -5015,32 +5769,6 @@ class MainWindow(QMainWindow):
         volume, affine = _standardize_volume(data, img.affine)
         transform = VolumeTransform.from_image(img, STANDARD_DISPLAY_SHAPE)
         return volume, affine, transform, nib.aff2axcodes(img.affine)
-
-
-def _pin_windows_app_id():
-    """Stop Windows from pinning the generic python.exe icon on the taskbar."""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "UniKL.MIIT.AICopilot.TumorViewer"
-        )
-    except Exception:
-        pass
-
-
-def _pin_windows_app_id():
-    """Stop Windows from pinning the generic python.exe icon on the taskbar."""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "UniKL.MIIT.AICopilot.TumorViewer"
-        )
-    except Exception:
-        pass
 
 
 def _pin_windows_app_id():
