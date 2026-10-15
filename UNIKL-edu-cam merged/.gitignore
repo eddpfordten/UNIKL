@@ -1,0 +1,17 @@
+.idea/
+__pycache__/
+*.py[cod]
+*.ipynb_checkpoints/
+*.bak
+.env
+.env.*
+venv/
+.venv/
+*.egg-info/
+Abuya Code/vendor/
+Abuya Code/outputs/checkpoints/medsam2/
+Abuya Code/outputs/refined_masks/
+Abuya Code/build_exe/
+Abuya Code/dist/
+.DS_Store
+Thumbs.db

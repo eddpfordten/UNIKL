@@ -1,0 +1,8 @@
+# Packages used for the saved Step 1 and Step 2 evaluation runs (Python 3.12).
+torch==2.13.0
+numpy==2.4.4
+scipy==1.17.1
+nibabel==5.4.2
+onnx==1.23.0
+onnxruntime==1.30.0
+onnxscript==0.7.2
