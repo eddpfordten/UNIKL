@@ -1,0 +1,62 @@
+:root {
+  --ink: #121214;
+  --slate: #141417;
+  --panel: #1c1c20;
+  --mist: #9a9388;
+  --bone: #f4f1ea;
+  --tissue: #ff9f1c;
+  --tissue-dim: #e67a00;
+  --scan: rgba(255, 159, 28, 0.16);
+  --font-display: "Segoe UI", system-ui, sans-serif;
+  --font-body: "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--ink);
+  color: var(--bone);
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+:focus-visible {
+  outline: 2px solid var(--tissue);
+  outline-offset: 3px;
+}
