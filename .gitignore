@@ -15,3 +15,8 @@ Abuya Code/build_exe/
 Abuya Code/dist/
 .DS_Store
 Thumbs.db
+
+# packaging
+dist/
+build/
+*.egg-info/
