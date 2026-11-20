@@ -13,7 +13,7 @@ fi
 "$PY" -c "import PyInstaller" 2>/dev/null || "$PY" -m pip install "pyinstaller==6.22.3"
 
 rm -rf build dist
-"$PY" -m PyInstaller --noconfirm --distpath dist --workpath build packaging/BrainTumorViewer.spec
+"$PY" -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging/BrainTumorViewer.spec
 
 APP="dist/BrainTumorViewer.app"
 DMG="dist/BrainTumorViewer-macOS.dmg"
